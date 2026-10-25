@@ -18,9 +18,8 @@ import {
 import { getCategoryBadgeClass, formatEventDate, isBoostAttivo } from "@/lib/utils";
 import confiniToscanaData from "@/lib/confini_toscana.json";
 
-// API Key Google Maps condivisa con Rook App
-const GOOGLE_MAPS_API_KEY =
-  process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY || "AIzaSyAtihbYGpKKWtqQ6J7j0bHhBsZyZACtjZU";
+// API Key Google Maps (letta da variabile d'ambiente)
+const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY || "";
 
 // Limiti geografici Toscana
 const TOSCANA_BOUNDS = {
