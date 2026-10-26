@@ -8,12 +8,15 @@ Costruita con **Next.js 14**, **Tailwind CSS**, **Lucide Icons** e collegata dir
 ## 🚀 Avvio Rapido
 
 ### 1. In Sviluppo Locale (PC)
-Fai doppio clic sul file:
+Requisito: avere installato **Node.js** (v18 o superiore).
+
+Fai doppio clic sul file (installerà le dipendenze in automatico al primo avvio):
 ```
 avvia_sviluppo.bat
 ```
 Oppure da terminale:
 ```bash
+npm install
 npm run dev
 ```
 Il sito si aprirà automaticamente su: **`http://localhost:3000`**
