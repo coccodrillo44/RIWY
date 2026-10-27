@@ -73,6 +73,7 @@ export interface InfoEnteDB {
   logoEnte?: string;
   enteSince?: string;
   verificato?: boolean;
+  badges?: string[];
   emailVerificata?: boolean;
   tokenVerificaEmail?: string;
   emailInviata?: boolean;
@@ -205,3 +206,56 @@ export interface CreateOwnEnteData {
   tiktok?: string;
   linkedin?: string;
 }
+
+export interface BadgeDef {
+  id: string;
+  label: string;
+  icon: string;
+  colore: string;
+  descrizione: string;
+}
+
+export const BADGES_DISPONIBILI: BadgeDef[] = [
+  {
+    id: "VERIFICATO",
+    label: "Organizzatore Verificato",
+    icon: "ShieldCheck",
+    colore: "blue",
+    descrizione: "Spunta blu ufficiale conferita dall'amministrazione dopo verifica identità e affidabilità.",
+  },
+  {
+    id: "TOP_ORGANIZZATORE",
+    label: "Top Organizzatore",
+    icon: "Award",
+    colore: "amber",
+    descrizione: "Eccellenza per continuità, eventi di qualità e recensioni altissime della community.",
+  },
+  {
+    id: "COLLABORATORE_DOC",
+    label: "Partner di Rete",
+    icon: "Users",
+    colore: "purple",
+    descrizione: "Promotore attivo di collaborazioni e sinergie virtuose con altri enti toscani.",
+  },
+  {
+    id: "VETERANO",
+    label: "Veterano Rook",
+    icon: "Sparkles",
+    colore: "emerald",
+    descrizione: "Presenza storica e affidabilità consolidata nel tempo sul territorio.",
+  },
+  {
+    id: "PATROCINATO",
+    label: "Patrocinato / Istituzionale",
+    icon: "Landmark",
+    colore: "indigo",
+    descrizione: "Riconoscimento istituzionale o patrocinio da comuni/enti culturali.",
+  },
+  {
+    id: "SOSTENITORE_PRO",
+    label: "Sostenitore Pro",
+    icon: "Zap",
+    colore: "pink",
+    descrizione: "Investe con costanza nella visibilità dei propri eventi attraverso promozioni e booster.",
+  },
+];

@@ -20,6 +20,8 @@ import {
   AnalyticsDB,
   OrganizerEventDraft,
   CreateOwnEnteData,
+  BADGES_DISPONIBILI,
+  BadgeDef,
 } from "@/types";
 import { auth, rtdb, storage, googleProvider } from "@/lib/firebase";
 import { processAndUploadEventImage } from "@/lib/imageUtils";
@@ -86,6 +88,7 @@ interface AdminContextType {
   reactivateEnte: (idEnte: string) => Promise<boolean>;
   deleteEnte: (idEnte: string, motivo: string) => Promise<boolean>;
   toggleEnteVerificato: (idEnte: string, verificato: boolean) => Promise<boolean>;
+  toggleBadgeEnte: (idEnte: string, badgeId: string) => Promise<boolean>;
   resolveReport: (reportId: string, categoria: string, note: string, idOrganizzatore?: string) => Promise<void>;
   reopenReport: (reportId: string, categoria: string, idOrganizzatore?: string) => Promise<void>;
   toggleFeatureFlag: (flagId: string) => Promise<void>;
@@ -347,11 +350,23 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
           (snap) => {
             if (snap.exists()) {
               const list: InfoEnteDB[] = Object.entries(snap.val() as Record<string, any>).map(
-                ([k, v]) => ({
-                  ...v,
-                  idEnte: k,
-                  verificato: v.verificato === true,
-                })
+                ([k, v]) => {
+                  const isVerificato = v.verificato === true;
+                  const rawBadges = Array.isArray(v.badges)
+                    ? v.badges
+                    : v.badges && typeof v.badges === "object"
+                    ? Object.keys(v.badges).filter((b) => v.badges[b] === true)
+                    : [];
+                  const badgesList = Array.from(
+                    new Set([...rawBadges, ...(isVerificato ? ["VERIFICATO"] : [])])
+                  );
+                  return {
+                    ...v,
+                    idEnte: k,
+                    verificato: isVerificato,
+                    badges: badgesList,
+                  };
+                }
               );
               setOrganizers(list);
             } else {
@@ -1016,21 +1031,35 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     [organizers, addAuditLog, notify]
   );
 
-  // 7e. Toggle Ente Verificato badge
-  const toggleEnteVerificato = useCallback(
-    async (idEnte: string, verificato: boolean): Promise<boolean> => {
+  // 7e. Toggle Ente Badge (qualsiasi badge della lista assegnabile)
+  const toggleBadgeEnte = useCallback(
+    async (idEnte: string, badgeId: string): Promise<boolean> => {
       const ente = organizers.find((o) => o.idEnte === idEnte);
       const enteNome = ente?.nomeEnte || idEnte;
+      const currentBadges = Array.isArray(ente?.badges) ? [...ente.badges] : [];
+      const isCurrentlyPresent = currentBadges.includes(badgeId);
+      const newBadges = isCurrentlyPresent
+        ? currentBadges.filter((b) => b !== badgeId)
+        : [...currentBadges, badgeId];
+
+      const isAdding = !isCurrentlyPresent;
+      const badgeInfo = BADGES_DISPONIBILI.find((b) => b.id === badgeId);
+      const badgeLabel = badgeInfo?.label || badgeId;
       const now = Date.now();
+
       try {
-        await update(ref(rtdb, `enti/${idEnte}`), {
-          verificato: Boolean(verificato),
-        });
+        const updates: Record<string, any> = {
+          badges: newBadges,
+        };
+        if (badgeId === "VERIFICATO") {
+          updates.verificato = isAdding;
+        }
 
-        // Se l'admin verifica l'ente, invia notifica in-app all'interessato
-        if (verificato) {
+        await update(ref(rtdb, `enti/${idEnte}`), updates);
+
+        // Se l'admin assegna il badge, invia notifica in-app all'ente
+        if (isAdding) {
           const targets = Array.from(new Set([idEnte, ente?.idCreatore].filter(Boolean) as string[]));
-
           for (let i = 0; i < targets.length; i++) {
             const targetUid = targets[i];
             try {
@@ -1038,43 +1067,55 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
               const notifId = notifRef.key || `notif_${now}_${i}`;
               await set(notifRef, {
                 idNotifica: notifId,
-                tipo: "ENTE_VERIFICATO",
-                titoloEvento: "Profilo Ente Verificato! 🛡️",
+                tipo: badgeId === "VERIFICATO" ? "ENTE_VERIFICATO" : "BADGE_ASSEGNATO",
+                badgeId: badgeId,
+                titoloEvento: `Badge Assegnato: ${badgeLabel} 🎖️`,
                 nomeMittente: "Amministrazione Rook",
                 uidMittente: "admin",
-                messaggio: `Congratulazioni! Il tuo profilo '${enteNome}' è stato verificato ufficialmente dall'amministrazione. Il badge verificato è ora visibile sul tuo profilo e sui tuoi eventi.`,
+                messaggio: `Congratulazioni! Il tuo profilo '${enteNome}' ha ricevuto ufficialmente il badge '${badgeLabel}'.`,
                 timestamp: now,
                 letta: false,
               });
             } catch (errNotif) {
-              console.warn("Errore invio notifica verifica all'ente:", errNotif);
+              console.warn("Errore invio notifica badge all'ente:", errNotif);
             }
           }
         }
 
         await addAuditLog({
-          azione: verificato ? "AGGIUNTO_BADGE_VERIFICATO" : "RIMOSSO_BADGE_VERIFICATO",
+          azione: isAdding ? "AGGIUNTO_BADGE_ENTE" : "RIMOSSO_BADGE_ENTE",
           targetTipo: "ente",
           targetId: idEnte,
-          dettagli: `${verificato ? "Assegnato" : "Revocato"} badge 'Verificato' all'ente '${enteNome}'`,
-          diffPrima: { verificato: Boolean(ente?.verificato) },
-          diffDopo: { verificato: Boolean(verificato) },
+          dettagli: `${isAdding ? "Assegnato" : "Revocato"} badge '${badgeLabel}' all'ente '${enteNome}'`,
+          diffPrima: { badges: currentBadges },
+          diffDopo: { badges: newBadges },
         });
 
         notify(
           "success",
-          verificato
-            ? `Badge "Verificato" assegnato a "${enteNome}". Notifica inviata in app.`
-            : `Badge "Verificato" rimosso da "${enteNome}"`
+          isAdding
+            ? `Badge "${badgeLabel}" assegnato a "${enteNome}". Notifica inviata in app.`
+            : `Badge "${badgeLabel}" rimosso da "${enteNome}".`
         );
         return true;
       } catch (e) {
-        console.error("Errore modifica stato verificato ente:", e);
+        console.error("Errore modifica badge ente:", e);
         notify("error", `Operazione fallita: ${errText(e)}`);
         return false;
       }
     },
     [organizers, addAuditLog, notify]
+  );
+
+  // 7f. Toggle Ente Verificato (retrocompatibilità)
+  const toggleEnteVerificato = useCallback(
+    async (idEnte: string, verificato: boolean): Promise<boolean> => {
+      const ente = organizers.find((o) => o.idEnte === idEnte);
+      const currentVerificato = Boolean(ente?.verificato || ente?.badges?.includes("VERIFICATO"));
+      if (currentVerificato === verificato) return true;
+      return toggleBadgeEnte(idEnte, "VERIFICATO");
+    },
+    [organizers, toggleBadgeEnte]
   );
 
   // 8. Resolve Report & Reopen Report
@@ -1500,6 +1541,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         reactivateEnte,
         deleteEnte,
         toggleEnteVerificato,
+        toggleBadgeEnte,
         resolveReport,
         reopenReport,
         toggleFeatureFlag,

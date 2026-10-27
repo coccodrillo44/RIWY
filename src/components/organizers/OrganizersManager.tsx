@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import { useAdmin } from "@/context/AdminContext";
-import { RichiestaOrganizzatoreDB, InfoEnteDB } from "@/types";
+import { RichiestaOrganizzatoreDB, InfoEnteDB, BADGES_DISPONIBILI, BadgeDef } from "@/types";
 import {
   Building2,
   BadgeCheck,
@@ -21,8 +21,69 @@ import {
   Trash2,
   Send,
   AlertTriangle,
+  Award,
+  Sparkles,
+  Users,
+  Landmark,
+  Zap,
+  Plus,
+  Check,
+  ChevronDown,
+  X,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
+
+function renderBadgeIcon(iconName: string, className = "w-3 h-3") {
+  switch (iconName) {
+    case "ShieldCheck":
+      return <BadgeCheck className={className} />;
+    case "Award":
+      return <Award className={className} />;
+    case "Users":
+      return <Users className={className} />;
+    case "Sparkles":
+      return <Sparkles className={className} />;
+    case "Landmark":
+      return <Landmark className={className} />;
+    case "Zap":
+      return <Zap className={className} />;
+    default:
+      return <BadgeCheck className={className} />;
+  }
+}
+
+function getBadgeColorClasses(color: string, isPill = true) {
+  switch (color) {
+    case "blue":
+      return isPill
+        ? "bg-blue-500/15 text-blue-400 border-blue-500/40"
+        : "text-blue-400";
+    case "amber":
+      return isPill
+        ? "bg-amber-500/15 text-amber-400 border-amber-500/40"
+        : "text-amber-400";
+    case "purple":
+      return isPill
+        ? "bg-purple-500/15 text-purple-400 border-purple-500/40"
+        : "text-purple-400";
+    case "emerald":
+      return isPill
+        ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/40"
+        : "text-emerald-400";
+    case "indigo":
+      return isPill
+        ? "bg-indigo-500/15 text-indigo-400 border-indigo-500/40"
+        : "text-indigo-400";
+    case "pink":
+      return isPill
+        ? "bg-pink-500/15 text-pink-400 border-pink-500/40"
+        : "text-pink-400";
+    default:
+      return isPill
+        ? "bg-slate-700/50 text-slate-300 border-slate-600"
+        : "text-slate-300";
+  }
+}
 
 export function OrganizersManager() {
   const {
@@ -35,7 +96,11 @@ export function OrganizersManager() {
     reactivateEnte,
     deleteEnte,
     toggleEnteVerificato,
+    toggleBadgeEnte,
   } = useAdmin();
+
+  // Menu Gestione Badge
+  const [openBadgesMenuOrgId, setOpenBadgesMenuOrgId] = useState<string | null>(null);
 
   // Reject Request Modal
   const [rejectId, setRejectId] = useState<string | null>(null);
@@ -245,8 +310,8 @@ export function OrganizersManager() {
                       <div className="text-[10px] text-slate-400">{org.telefonoEnte || ""}</div>
                     </td>
 
-                    <td className="px-4 py-3 text-center whitespace-nowrap">
-                      <div className="flex flex-col items-center justify-center gap-1.5">
+                    <td className="px-4 py-3 text-center">
+                      <div className="flex flex-col items-center justify-center gap-1.5 relative">
                         {org.sospeso && (
                           <div className="flex flex-col items-center">
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/40">
@@ -260,34 +325,128 @@ export function OrganizersManager() {
                           </div>
                         )}
 
-                        <button
-                          type="button"
-                          onClick={() => toggleEnteVerificato(org.idEnte, !org.verificato)}
-                          title={
-                            org.verificato
-                              ? "Ente Verificato. Clicca per rimuovere il badge di verifica"
-                              : "Ente Non Verificato. Clicca per assegnare il badge di verifica"
-                          }
-                          className={`group inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all duration-150 cursor-pointer shadow-sm select-none hover:scale-105 ${
-                            org.verificato
-                              ? "bg-blue-500/15 text-blue-400 border border-blue-500/40 hover:bg-red-500/20 hover:text-red-300 hover:border-red-500/50"
-                              : "bg-slate-800/80 text-slate-400 border border-slate-700 hover:bg-blue-500/20 hover:text-blue-300 hover:border-blue-500/50"
-                          }`}
-                        >
-                          <BadgeCheck
-                            className={`w-3.5 h-3.5 transition-transform group-hover:scale-110 ${
-                              org.verificato
-                                ? "text-blue-400 group-hover:text-red-300"
-                                : "text-slate-500 group-hover:text-blue-400"
-                            }`}
-                          />
-                          <span className="group-hover:hidden">
-                            {org.verificato ? "VERIFICATO" : "NON VERIFICATO"}
-                          </span>
-                          <span className="hidden group-hover:inline">
-                            {org.verificato ? "RIMUOVI" : "VERIFICA"}
-                          </span>
-                        </button>
+                        {/* Badge Attivi dell'Organizzatore */}
+                        <div className="flex flex-wrap items-center justify-center gap-1 max-w-[220px]">
+                          {(() => {
+                            const badgesOrg = org.badges || (org.verificato ? ["VERIFICATO"] : []);
+                            if (badgesOrg.length === 0) {
+                              return (
+                                <span className="text-[10px] text-slate-500 italic">
+                                  Nessun badge
+                                </span>
+                              );
+                            }
+                            return badgesOrg.map((bId) => {
+                              const bDef = BADGES_DISPONIBILI.find((d) => d.id === bId);
+                              const label = bDef?.label || bId;
+                              const colorClass = getBadgeColorClasses(bDef?.colore || "blue", true);
+                              return (
+                                <span
+                                  key={bId}
+                                  title={`${label}: ${bDef?.descrizione || ""}`}
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold border ${colorClass} cursor-default`}
+                                >
+                                  {renderBadgeIcon(bDef?.icon || "ShieldCheck", "w-3 h-3")}
+                                  <span>{label}</span>
+                                </span>
+                              );
+                            });
+                          })()}
+                        </div>
+
+                        {/* Pulsante Gestisci / Assegna Badge */}
+                        <div className="relative mt-0.5">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setOpenBadgesMenuOrgId(
+                                openBadgesMenuOrgId === org.idEnte ? null : org.idEnte
+                              )
+                            }
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 hover:text-white transition"
+                          >
+                            <Plus className="w-3 h-3 text-cyan-400" />
+                            <span>Gestisci Badge</span>
+                            <ChevronDown className="w-3 h-3 opacity-60" />
+                          </button>
+
+                          {/* Dropdown Popover Assegnazione Badge */}
+                          {openBadgesMenuOrgId === org.idEnte && (
+                            <>
+                              <div
+                                className="fixed inset-0 z-40"
+                                onClick={() => setOpenBadgesMenuOrgId(null)}
+                              />
+                              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2.5 z-50 text-left">
+                                <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-800">
+                                  <span className="text-[11px] font-bold text-slate-200">
+                                    Badge Assegnabili ({org.nomeEnte})
+                                  </span>
+                                  <button
+                                    onClick={() => setOpenBadgesMenuOrgId(null)}
+                                    className="text-slate-400 hover:text-slate-200"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+
+                                <div className="space-y-1 max-h-64 overflow-y-auto">
+                                  {BADGES_DISPONIBILI.map((badge) => {
+                                    const badgesOrg = org.badges || (org.verificato ? ["VERIFICATO"] : []);
+                                    const isAssigned = badgesOrg.includes(badge.id);
+
+                                    return (
+                                      <div
+                                        key={badge.id}
+                                        onClick={() => toggleBadgeEnte(org.idEnte, badge.id)}
+                                        className={`flex items-start justify-between gap-2 p-1.5 rounded-lg cursor-pointer transition ${
+                                          isAssigned
+                                            ? "bg-slate-800/80 border border-slate-700/80 hover:bg-slate-800"
+                                            : "hover:bg-slate-800/40 border border-transparent"
+                                        }`}
+                                      >
+                                        <div className="flex items-start gap-1.5">
+                                          <div
+                                            className={`p-1 rounded mt-0.5 ${getBadgeColorClasses(
+                                              badge.colore,
+                                              true
+                                            )}`}
+                                          >
+                                            {renderBadgeIcon(badge.icon, "w-3.5 h-3.5")}
+                                          </div>
+                                          <div>
+                                            <div className="text-[11px] font-bold text-slate-200 flex items-center gap-1">
+                                              {badge.label}
+                                              {isAssigned && (
+                                                <span className="text-[9px] font-semibold text-emerald-400 bg-emerald-500/10 px-1 rounded">
+                                                  Attivo
+                                                </span>
+                                              )}
+                                            </div>
+                                            <div className="text-[9px] text-slate-400 leading-tight">
+                                              {badge.descrizione}
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        <button
+                                          type="button"
+                                          className={`text-[10px] font-bold px-2 py-0.5 rounded transition shrink-0 ${
+                                            isAssigned
+                                              ? "bg-red-500/15 text-red-400 hover:bg-red-500/25"
+                                              : "bg-blue-500/15 text-blue-400 hover:bg-blue-500/25"
+                                          }`}
+                                        >
+                                          {isAssigned ? "Rimuovi" : "Assegna"}
+                                        </button>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </td>
 
