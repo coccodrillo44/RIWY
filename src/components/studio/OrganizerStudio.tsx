@@ -26,6 +26,7 @@ import {
   Calendar,
   Clock,
   Check,
+  Mail,
 } from "lucide-react";
 import { formatEventDate, isEventoPassato } from "@/lib/utils";
 
@@ -663,6 +664,7 @@ export function OrganizerStudio() {
     events,
     saveOrganizerEvent,
     createOwnEnte,
+    reinviaEmailVerificaEnte,
     toggleOscurato,
     deleteEvent,
   } = useAdmin();
@@ -1231,6 +1233,22 @@ export function OrganizerStudio() {
                 {myEnte.telefonoEnte && <span>• Tel: {myEnte.telefonoEnte}</span>}
                 {myEnte.emailEnte && <span>• {myEnte.emailEnte}</span>}
               </div>
+              {myEnte.emailVerificata === false && (
+                <div className="mt-2.5 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-between text-xs text-amber-300">
+                  <div className="flex items-center space-x-2">
+                    <Mail className="w-4 h-4 shrink-0 text-amber-400" />
+                    <span>
+                      Nuova email <strong>{myEnte.emailEnte}</strong> in attesa di verifica. Controlla la posta e clicca sul link di conferma.
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => reinviaEmailVerificaEnte(myEnte.idEnte)}
+                    className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-semibold text-[11px] transition ml-3 shrink-0"
+                  >
+                    Reinvia email
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 

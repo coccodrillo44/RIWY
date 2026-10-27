@@ -92,6 +92,7 @@ interface AdminContextType {
   sendBroadcastPush: (notification: { title: string; body: string; targetProvince?: string; targetCategory?: string }) => Promise<boolean>;
   saveOrganizerEvent: (draft: OrganizerEventDraft, ente: { id: string; nome: string }, cover: File | null, programma: File | null, existingId?: string) => Promise<boolean>;
   createOwnEnte: (data: CreateOwnEnteData) => Promise<boolean>;
+  reinviaEmailVerificaEnte: (idEnte: string) => Promise<boolean>;
   addAuditLog: (log: Omit<AuditLogDB, "id" | "timestamp" | "operatore">) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
@@ -1335,6 +1336,21 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       try {
         const enteRef = ref(rtdb, `enti/${uid}`);
         const existing = await get(enteRef);
+        const existingData = existing.exists() ? existing.val() : null;
+        const oldEmail = (existingData?.emailEnte || "").trim().toLowerCase();
+        const newEmail = data.emailEnte.trim().toLowerCase();
+        const isEmailChanged = newEmail !== "" && (!existingData || (oldEmail !== "" && newEmail !== oldEmail));
+
+        let tokenVerifica = existingData?.tokenVerificaEmail || null;
+        let emailVerificata = existingData?.emailVerificata ?? true;
+        let emailInviata = existingData?.emailInviata ?? false;
+
+        if (isEmailChanged) {
+          tokenVerifica = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
+          emailVerificata = false;
+          emailInviata = false;
+        }
+
         const base: Record<string, any> = {
           nomeEnte: data.nomeEnte.trim(),
           referenteOrg: data.referenteOrg.trim(),
@@ -1342,6 +1358,9 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
           comuneEnte: data.comuneEnte.trim(),
           provinciaEnte: data.provinciaEnte.trim().toUpperCase(),
           emailEnte: data.emailEnte.trim(),
+          emailVerificata: emailVerificata,
+          tokenVerificaEmail: tokenVerifica,
+          emailInviata: emailInviata,
           telefonoEnte: data.telefonoEnte.trim(),
           descEnte: data.descEnte.trim(),
           sitoWeb: data.sitoWeb?.trim() || null,
@@ -1369,9 +1388,11 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         }
         notify(
           "success",
-          userSnap.exists()
-            ? "Profilo organizzatore attivato con successo (sincronizzato con l'app)!"
-            : "Ente creato con successo! Accedi all'app con questo account Google per usarlo anche lì."
+          isEmailChanged
+            ? `Profilo ente salvato! Abbiamo inviato un'email di verifica a ${data.emailEnte.trim()}.`
+            : userSnap.exists()
+            ? "Profilo organizzatore aggiornato con successo (sincronizzato con l'app)!"
+            : "Ente aggiornato con successo!"
         );
         await addAuditLog({
           azione: "STUDIO_CREAZIONE_ENTE",
@@ -1389,6 +1410,31 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       }
     },
     [currentUser, organizers, addAuditLog, notify]
+  );
+
+  const reinviaEmailVerificaEnte = useCallback(
+    async (idEnte: string) => {
+      try {
+        const enteRef = ref(rtdb, `enti/${idEnte}`);
+        const snap = await get(enteRef);
+        if (!snap.exists()) return false;
+        const current = snap.val() || {};
+        const token = current.tokenVerificaEmail || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2));
+        await update(enteRef, {
+          emailVerificata: false,
+          emailInviata: false,
+          tokenVerificaEmail: token,
+          timestampInvioEmail: Date.now(),
+        });
+        notify("success", `Email di verifica reinviata a ${current.emailEnte || "tuo indirizzo"}!`);
+        return true;
+      } catch (err) {
+        console.error("Errore reinvio email verifica ente:", err);
+        notify("error", "Errore durante il reinvio dell'email di verifica.");
+        return false;
+      }
+    },
+    [notify]
   );
 
   const loginWithGoogle = useCallback(async () => {
@@ -1460,6 +1506,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         sendBroadcastPush,
         saveOrganizerEvent,
         createOwnEnte,
+        reinviaEmailVerificaEnte,
         addAuditLog,
         loginWithGoogle,
         logout,

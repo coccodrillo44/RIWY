@@ -73,6 +73,9 @@ export interface InfoEnteDB {
   logoEnte?: string;
   enteSince?: string;
   verificato?: boolean;
+  emailVerificata?: boolean;
+  tokenVerificaEmail?: string;
+  emailInviata?: boolean;
   sospeso?: boolean;
   sospesoFino?: number;
   motivoSospensione?: string;
