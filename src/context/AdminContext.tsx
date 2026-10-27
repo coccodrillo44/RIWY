@@ -1376,7 +1376,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
             enteSince: new Date().toISOString(),
             idCreatore: uid,
             passwordStaff: `ROOK-${1000 + Math.floor(Math.random() * 9000)}-${code}`,
-            verificato: true,
+            verificato: false, // Nuovo ente non parte verificato, richiede verifica manuale
           });
         }
         await update(enteRef, clean(base));
