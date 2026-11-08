@@ -95,6 +95,7 @@ interface AdminContextType {
   sendBroadcastPush: (notification: { title: string; body: string; targetProvince?: string; targetCategory?: string }) => Promise<boolean>;
   saveOrganizerEvent: (draft: OrganizerEventDraft, ente: { id: string; nome: string }, cover: File | null, programma: File | null, existingId?: string) => Promise<boolean>;
   createOwnEnte: (data: CreateOwnEnteData) => Promise<boolean>;
+  deleteOwnEnte: () => Promise<boolean>;
   reinviaEmailVerificaEnte: (idEnte: string) => Promise<boolean>;
   addAuditLog: (log: Omit<AuditLogDB, "id" | "timestamp" | "operatore">) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
@@ -1481,6 +1482,85 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     [currentUser, organizers, addAuditLog, notify]
   );
 
+  const deleteOwnEnte = useCallback(async (): Promise<boolean> => {
+    const uid = currentUser?.uid;
+    if (!uid) {
+      notify("error", "Devi aver effettuato l'accesso per compiere questa operazione.");
+      return false;
+    }
+    const ente = organizers.find((o) => o.idEnte === uid);
+    if (!ente) {
+      notify("error", "Profilo organizzatore non trovato.");
+      return false;
+    }
+
+    try {
+      // 1. Ripristina i membri dello staff associati (se presenti) a utenti normali
+      try {
+        const staffSnap = await get(ref(rtdb, `enti/${uid}/membriStaff`));
+        if (staffSnap.exists()) {
+          const staffObj = staffSnap.val() || {};
+          for (const staffUid of Object.keys(staffObj)) {
+            try {
+              await update(ref(rtdb, `utenti/${staffUid}`), {
+                isEnte: false,
+                ente: false,
+                idEnteGestito: "",
+              });
+            } catch (_) {}
+          }
+        }
+      } catch (err) {
+        console.warn("Errore reset staff:", err);
+      }
+
+      // 2. Rimuovi tutti gli eventi creati da questo ente e le relative recensioni
+      const eventsToDelete = events.filter((e) => e.idOrganizzatore === uid || e.creatoDaUid === uid);
+      for (const ev of eventsToDelete) {
+        try {
+          await remove(ref(rtdb, `eventi/${ev.id}`));
+          await remove(ref(rtdb, `recensioni/${ev.id}`));
+        } catch (err) {
+          console.warn(`Errore rimozione evento ${ev.id}:`, err);
+        }
+      }
+
+      // 3. Rimuovi bozze e notifiche organizzatore
+      try {
+        await remove(ref(rtdb, `bozze_organizzatori/${uid}`));
+        await remove(ref(rtdb, `notifiche_organizzatori/${uid}`));
+      } catch (_) {}
+
+      // 4. Rimuovi il profilo ente ufficiale
+      await remove(ref(rtdb, `enti/${uid}`));
+
+      // 5. Ripristina il profilo utente come utente base
+      try {
+        await update(ref(rtdb, `utenti/${uid}`), {
+          isEnte: false,
+          ente: false,
+          idEnteGestito: "",
+        });
+      } catch (_) {}
+
+      await addAuditLog({
+        azione: "STUDIO_ELIMINAZIONE_PROPRIO_ENTE",
+        targetTipo: "ente",
+        targetId: uid,
+        dettagli: `L'organizzatore ha eliminato il proprio account ente '${ente.nomeEnte || uid}' (${eventsToDelete.length} eventi rimossi)`,
+        diffPrima: ente,
+        diffDopo: null,
+      });
+
+      notify("success", "Profilo organizzatore ed eventi collegati eliminati con successo.");
+      return true;
+    } catch (e) {
+      console.error("Errore eliminazione account organizzatore:", e);
+      notify("error", `Impossibile eliminare l'account organizzatore: ${errText(e)}`);
+      return false;
+    }
+  }, [currentUser, organizers, events, addAuditLog, notify]);
+
   const reinviaEmailVerificaEnte = useCallback(
     async (idEnte: string) => {
       try {
@@ -1576,6 +1656,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         sendBroadcastPush,
         saveOrganizerEvent,
         createOwnEnte,
+        deleteOwnEnte,
         reinviaEmailVerificaEnte,
         addAuditLog,
         loginWithGoogle,
