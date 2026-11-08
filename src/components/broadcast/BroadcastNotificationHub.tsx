@@ -33,6 +33,7 @@ export function BroadcastNotificationHub() {
     "Famiglia & Bambini",
     "Fiere & Mercati",
     "Nuove Aperture",
+    "Sconti & Promozioni",
   ];
 
   const handleSend = async (e: React.FormEvent) => {

@@ -772,10 +772,28 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   const rejectOrganizerRequest = useCallback(
     async (idRichiesta: string, motivo: string) => {
       try {
+        const now = Date.now();
+        const req = organizerRequests.find((r) => r.idRichiesta === idRichiesta);
+        const uid = req?.uidUtente || idRichiesta;
+
         await update(ref(rtdb, `richieste_organizzatori/${idRichiesta}`), {
           stato: "RIFIUTATA",
           motivoRifiuto: motivo,
+          timestampRifiuto: now,
         });
+
+        // Assicura che l'utente non rimanga flaggato come ente
+        if (uid) {
+          try {
+            await update(ref(rtdb, `utenti/${uid}`), {
+              isEnte: false,
+              ente: false,
+            });
+          } catch {
+            // Ignora se non necessario
+          }
+        }
+
         notify("success", "Richiesta respinta");
 
         await addAuditLog({
@@ -784,7 +802,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
           targetId: idRichiesta,
           dettagli: `Rifiutata richiesta organizzatore. Motivo: ${motivo}`,
           diffPrima: { stato: "IN_ATTESA" },
-          diffDopo: { stato: "RIFIUTATA", motivo },
+          diffDopo: { stato: "RIFIUTATA", motivo, timestampRifiuto: now },
         });
       } catch (e) {
         console.error("Errore rifiuto richiesta ente:", e);
@@ -1057,28 +1075,38 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
 
         await update(ref(rtdb, `enti/${idEnte}`), updates);
 
-        // Se l'admin assegna il badge, invia notifica in-app all'ente
-        if (isAdding) {
-          const targets = Array.from(new Set([idEnte, ente?.idCreatore].filter(Boolean) as string[]));
-          for (let i = 0; i < targets.length; i++) {
-            const targetUid = targets[i];
-            try {
-              const notifRef = push(ref(rtdb, `notifiche_organizzatori/${targetUid}`));
-              const notifId = notifRef.key || `notif_${now}_${i}`;
-              await set(notifRef, {
-                idNotifica: notifId,
-                tipo: badgeId === "VERIFICATO" ? "ENTE_VERIFICATO" : "BADGE_ASSEGNATO",
-                badgeId: badgeId,
-                titoloEvento: `Badge Assegnato: ${badgeLabel} 🎖️`,
-                nomeMittente: "Amministrazione Rook",
-                uidMittente: "admin",
-                messaggio: `Congratulazioni! Il tuo profilo '${enteNome}' ha ricevuto ufficialmente il badge '${badgeLabel}'.`,
-                timestamp: now,
-                letta: false,
-              });
-            } catch (errNotif) {
-              console.warn("Errore invio notifica badge all'ente:", errNotif);
-            }
+        // Notifica in-app all'ente per assegnazione o rimozione badge
+        const targets = Array.from(new Set([idEnte, ente?.idCreatore].filter(Boolean) as string[]));
+        for (let i = 0; i < targets.length; i++) {
+          const targetUid = targets[i];
+          try {
+            const notifRef = push(ref(rtdb, `notifiche_organizzatori/${targetUid}`));
+            const notifId = notifRef.key || `notif_${now}_${i}`;
+            const tipo = isAdding
+              ? (badgeId === "VERIFICATO" ? "ENTE_VERIFICATO" : "BADGE_ASSEGNATO")
+              : (badgeId === "VERIFICATO" ? "ENTE_DISVERIFICATO" : "BADGE_RIMOSSO");
+            const titolo = isAdding
+              ? `Badge Assegnato: ${badgeLabel} 🎖️`
+              : `Riconoscimento Aggiornato: ${badgeLabel} ℹ️`;
+            const messaggio = isAdding
+              ? `Congratulazioni! Il tuo profilo '${enteNome}' ha ricevuto ufficialmente il badge '${badgeLabel}'.`
+              : `Il badge '${badgeLabel}' è stato revocato/aggiornato dall'amministrazione per '${enteNome}'.`;
+
+            await set(notifRef, {
+              idNotifica: notifId,
+              tipo,
+              badgeId,
+              idBadge: badgeId,
+              azioneBadge: isAdding ? "ASSEGNATO" : "RIMOSSO",
+              titoloEvento: titolo,
+              nomeMittente: "Amministrazione Rook",
+              uidMittente: "admin",
+              messaggio,
+              timestamp: now,
+              letta: false,
+            });
+          } catch (errNotif) {
+            console.warn("Errore invio notifica badge all'ente:", errNotif);
           }
         }
 

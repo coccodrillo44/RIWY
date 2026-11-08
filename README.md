@@ -40,7 +40,7 @@ L'URL online è:
 
 ### 1. 📊 Dashboard Cockpit
 - Contatori live di eventi attivi, utenti registrati, organizzatori verificati e segnalazioni pendenti.
-- Distribuzione percentuali e conteggi per le **7 Macro-Categorie della Toscana** (*Cibo & Sagre, Musica & Feste, Arte & Cultura, Sport & Movimento, Famiglia & Bambini, Fiere & Mercati, Nuove Aperture*).
+- Distribuzione percentuali e conteggi per le **8 Macro-Categorie della Toscana** (*Cibo & Sagre, Musica & Feste, Arte & Cultura, Sport & Movimento, Famiglia & Bambini, Fiere & Mercati, Nuove Aperture, Sconti & Promozioni*).
 - Sezione dedicata agli eventi con **Booster Dorato Attivo** ("⚡ In Evidenza").
 - Feed streaming delle ultime interazioni in tempo reale.
 

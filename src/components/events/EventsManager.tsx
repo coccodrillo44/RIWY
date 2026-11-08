@@ -35,6 +35,7 @@ export function EventsManager() {
   const setSelectedCategory = setEventCategoryFilter;
   const [selectedProvince, setSelectedProvince] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState("all");
+  const [sortBy, setSortBy] = useState<"data" | "likes" | "titolo">("data");
 
   // Modal State
   const [editingEvent, setEditingEvent] = useState<EventoDB | null>(null);
@@ -49,48 +50,61 @@ export function EventsManager() {
     "Famiglia & Bambini",
     "Fiere & Mercati",
     "Nuove Aperture",
+    "Sconti & Promozioni",
   ];
 
   const provinces = ["FI", "PI", "LU", "SI", "AR", "LI", "MS", "GR", "PO", "PT"];
 
   // Filter logic
   const filteredEvents = useMemo(() => {
-    return events.filter((ev) => {
-      const title = ev.titolo || "";
-      const org = ev.organizzatore || "";
-      const place = ev.luogo || "";
-      const term = searchTerm.toLowerCase();
+    return events
+      .filter((ev) => {
+        const title = ev.titolo || "";
+        const org = ev.organizzatore || "";
+        const place = ev.luogo || "";
+        const term = searchTerm.toLowerCase();
 
-      const matchesSearch =
-        title.toLowerCase().includes(term) ||
-        org.toLowerCase().includes(term) ||
-        place.toLowerCase().includes(term);
+        const matchesSearch =
+          title.toLowerCase().includes(term) ||
+          org.toLowerCase().includes(term) ||
+          place.toLowerCase().includes(term);
 
-      const matchesCategory =
-        selectedCategory === "all" ||
-        ev.categoria === selectedCategory ||
-        normalizeCategory(ev.categoria) === selectedCategory;
-      const matchesProvince =
-        selectedProvince === "all" || ev.provincia === selectedProvince;
+        const matchesCategory =
+          selectedCategory === "all" ||
+          ev.categoria === selectedCategory ||
+          normalizeCategory(ev.categoria) === selectedCategory;
+        const matchesProvince =
+          selectedProvince === "all" || ev.provincia === selectedProvince;
 
-      const hasBoost = isBoostAttivo(ev);
-      const isPast = isEventoPassato(ev);
-      const isVisible = !ev.oscurato && !isPast;
+        const hasBoost = isBoostAttivo(ev);
+        const isPast = isEventoPassato(ev);
+        const isVisible = !ev.oscurato && !isPast;
 
-      let matchesStatus = true;
-      if (selectedStatus === "booster") {
-        matchesStatus = hasBoost;
-      } else if (selectedStatus === "visibile") {
-        matchesStatus = isVisible;
-      } else if (selectedStatus === "passato") {
-        matchesStatus = isPast;
-      } else if (selectedStatus === "oscurato") {
-        matchesStatus = ev.oscurato === true;
-      }
+        let matchesStatus = true;
+        if (selectedStatus === "booster") {
+          matchesStatus = hasBoost;
+        } else if (selectedStatus === "visibile") {
+          matchesStatus = isVisible;
+        } else if (selectedStatus === "passato") {
+          matchesStatus = isPast;
+        } else if (selectedStatus === "oscurato") {
+          matchesStatus = ev.oscurato === true;
+        }
 
-      return matchesSearch && matchesCategory && matchesProvince && matchesStatus;
-    });
-  }, [events, searchTerm, selectedCategory, selectedProvince, selectedStatus]);
+        return matchesSearch && matchesCategory && matchesProvince && matchesStatus;
+      })
+      .sort((a, b) => {
+        if (sortBy === "likes") {
+          return (b.likes || 0) - (a.likes || 0);
+        } else if (sortBy === "titolo") {
+          return (a.titolo || "").localeCompare(b.titolo || "");
+        }
+        // default data
+        const dateA = typeof a.data === "number" ? a.data : Number(a.data) || 0;
+        const dateB = typeof b.data === "number" ? b.data : Number(b.data) || 0;
+        return dateB - dateA;
+      });
+  }, [events, searchTerm, selectedCategory, selectedProvince, selectedStatus, sortBy]);
 
   const handleSaveModal = (e: React.FormEvent) => {
     e.preventDefault();
@@ -154,7 +168,7 @@ export function EventsManager() {
             onChange={(e) => setSelectedCategory(e.target.value)}
             className="bg-[#141d2e] border border-slate-700 rounded-lg px-2.5 py-2 text-slate-200 focus:outline-none focus:border-amber-500"
           >
-            <option value="all">Tutte le Categorie (7)</option>
+            <option value="all">Tutte le Categorie ({categories.length})</option>
             {categories.map((c) => (
               <option key={c} value={c}>
                 {c}
@@ -187,6 +201,17 @@ export function EventsManager() {
             <option value="passato">Passato (Storico Enti)</option>
             <option value="oscurato">Oscurato / Nascosto</option>
             <option value="booster">⚡ Con Booster Attivo</option>
+          </select>
+
+          {/* Ordinamento */}
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as "data" | "likes" | "titolo")}
+            className="bg-[#141d2e] border border-slate-700 rounded-lg px-2.5 py-2 text-slate-200 focus:outline-none focus:border-amber-500"
+          >
+            <option value="data">Ordina: Più recenti</option>
+            <option value="likes">Ordina: Più popolari (Like 👍)</option>
+            <option value="titolo">Ordina: Alfabetico (A-Z)</option>
           </select>
         </div>
       </div>
