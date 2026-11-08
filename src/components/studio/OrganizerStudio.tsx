@@ -665,6 +665,7 @@ export function OrganizerStudio() {
     events,
     saveOrganizerEvent,
     createOwnEnte,
+    deleteOwnEnte,
     reinviaEmailVerificaEnte,
     toggleOscurato,
     deleteEvent,
@@ -676,6 +677,8 @@ export function OrganizerStudio() {
 
   // Form per creare o modificare il proprio ente
   const [showEnteModal, setShowEnteModal] = useState(false);
+  const [showDeleteEnteConfirm, setShowDeleteEnteConfirm] = useState(false);
+  const [deletingEnte, setDeletingEnte] = useState(false);
   const [enteForm, setEnteForm] = useState<CreateOwnEnteData>({
     nomeEnte: "",
     referenteOrg: "",
@@ -1149,6 +1152,21 @@ export function OrganizerStudio() {
     }
   };
 
+  const handleDeleteOwnEnte = async () => {
+    setDeletingEnte(true);
+    try {
+      const ok = await deleteOwnEnte();
+      if (ok) {
+        setShowDeleteEnteConfirm(false);
+        setShowEnteModal(false);
+      }
+    } catch (err) {
+      console.error("Errore cancellazione account organizzatore:", err);
+    } finally {
+      setDeletingEnte(false);
+    }
+  };
+
   const set = (patch: Partial<OrganizerEventDraft>) => draft && setDraft({ ...draft, ...patch });
 
   const isEventAddressLocked = Boolean(draft && draft.via && draft.via.trim() && draft.latitudine !== 0);
@@ -1262,6 +1280,13 @@ export function OrganizerStudio() {
               className="px-3 py-2 rounded-lg bg-[#141d2e] hover:bg-slate-800 text-slate-300 text-xs font-semibold flex items-center transition"
             >
               <Edit className="w-3.5 h-3.5 mr-1" /> Dati Ente
+            </button>
+            <button
+              onClick={() => setShowDeleteEnteConfirm(true)}
+              className="px-3 py-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-semibold flex items-center transition"
+              title="Elimina account organizzatore"
+            >
+              <Trash2 className="w-3.5 h-3.5 mr-1" /> Elimina Profilo Ente
             </button>
             <button
               onClick={openNew}
@@ -1395,6 +1420,28 @@ export function OrganizerStudio() {
               handleResetEnteAddress={handleResetEnteAddress}
             />
 
+            {/* Zona Pericolo: Eliminazione Profilo Organizzatore */}
+            <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-4">
+              <div>
+                <span className="text-xs font-bold text-rose-400 flex items-center">
+                  <AlertTriangle className="w-3.5 h-3.5 mr-1" /> Zona Pericolo • Elimina Profilo Ente
+                </span>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Elimina definitivamente il profilo organizzatore, tutti gli eventi associati e revoca l&apos;accesso dello staff.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEnteModal(false);
+                  setShowDeleteEnteConfirm(true);
+                }}
+                className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shrink-0"
+              >
+                Elimina account ente
+              </button>
+            </div>
+
             <div className="flex justify-end gap-2 pt-4 border-t border-[#1e293b]">
               <button
                 type="button"
@@ -1413,6 +1460,62 @@ export function OrganizerStudio() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Modal Conferma Eliminazione Proprio Account Ente */}
+      {showDeleteEnteConfirm && myEnte && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+          <div className="bg-[#0f172a] border border-rose-500/40 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl text-xs">
+            <div className="flex items-center space-x-3 text-rose-400">
+              <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/30">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">Eliminare Profilo Organizzatore?</h3>
+                <p className="text-xs text-rose-400/80 font-medium">Questa azione è definitiva e irreversibile</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Stai per eliminare definitivamente il profilo dell&apos;ente <strong className="text-white">{myEnte.nomeEnte}</strong>. Verranno rimossi:
+            </p>
+            <ul className="list-disc list-inside text-[11px] text-slate-400 space-y-1 bg-[#141d2e] p-3 rounded-lg border border-slate-800">
+              <li>I dati ufficiali dell&apos;ente e tutti i badge</li>
+              <li>Tutti gli eventi pubblicati da questo account ({enteEvents.length} eventi)</li>
+              <li>L&apos;accesso e i privilegi per tutti i membri dello staff</li>
+              <li>Le bozze e le notifiche interne dell&apos;ente</li>
+            </ul>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                disabled={deletingEnte}
+                onClick={() => setShowDeleteEnteConfirm(false)}
+                className="px-4 py-2 rounded-lg bg-[#141d2e] hover:bg-slate-800 text-slate-300 font-medium transition"
+              >
+                Annulla
+              </button>
+              <button
+                type="button"
+                disabled={deletingEnte}
+                onClick={handleDeleteOwnEnte}
+                className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold flex items-center transition shadow-lg shadow-rose-600/30"
+              >
+                {deletingEnte ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                    Eliminazione in corso...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                    Conferma Eliminazione
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

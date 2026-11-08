@@ -15,7 +15,7 @@ import {
   RotateCcw,
   Loader2,
 } from "lucide-react";
-import { getCategoryBadgeClass, formatEventDate, isBoostAttivo } from "@/lib/utils";
+import { getCategoryBadgeClass, formatEventDate, isBoostAttivo, isEventoPassato } from "@/lib/utils";
 import confiniToscanaData from "@/lib/confini_toscana.json";
 
 function decodeFallback(b64: string): string {
@@ -244,35 +244,40 @@ export function TuscanyMapViewer() {
     { sigla: "MS", nome: "Massa-Carrara", lat: 44.03, lng: 10.14, badge: "Apuane & Marmo" },
   ];
 
-  // Conteggio eventi per ciascuna provincia
+  // Filtra solo gli eventi attivi/futuri (escludi eventi conclusi dalla mappa live)
+  const activeEvents = useMemo(() => {
+    return events.filter((ev) => !isEventoPassato(ev));
+  }, [events]);
+
+  // Conteggio eventi attivi per ciascuna provincia
   const provinceCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    events.forEach((ev) => {
+    activeEvents.forEach((ev) => {
       const p = (ev.provincia || "N/D").trim().toUpperCase();
       counts[p] = (counts[p] || 0) + 1;
     });
     return counts;
-  }, [events]);
+  }, [activeEvents]);
 
   const selectedProvinceObj = useMemo(
     () => (selectedProvince ? provincesData.find((p) => p.sigla === selectedProvince) || null : null),
     [selectedProvince]
   );
 
-  // Eventi della SOLA provincia selezionata (se nessuna selezionata, array vuoto per la card sotto)
+  // Eventi attivi della SOLA provincia selezionata (se nessuna selezionata, array vuoto per la card sotto)
   const displayedEvents = useMemo(() => {
     if (!selectedProvince) return [];
-    return events.filter((ev) => {
+    return activeEvents.filter((ev) => {
       const p = (ev.provincia || "N/D").trim().toUpperCase();
       return p === selectedProvince;
     });
-  }, [events, selectedProvince]);
+  }, [activeEvents, selectedProvince]);
 
-  // Eventi da visualizzare su Google Maps (se provincia selezionata, solo quelli; altrimenti tutti gli eventi toscani)
+  // Eventi attivi da visualizzare su Google Maps (se provincia selezionata, solo quelli; altrimenti tutti gli eventi toscani attivi)
   const mapEvents = useMemo(() => {
     if (selectedProvince) return displayedEvents;
-    return events;
-  }, [selectedProvince, displayedEvents, events]);
+    return activeEvents;
+  }, [selectedProvince, displayedEvents, activeEvents]);
 
   // Inizializzazione Google Maps in MODALITÀ CHIARA (Light Mode nativa)
   useEffect(() => {
@@ -549,7 +554,7 @@ export function TuscanyMapViewer() {
                 Panoramica: <strong className="text-slate-300 font-mono text-sm">Tutta la Toscana</strong>
               </span>
               <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-[#141d2e] border border-slate-700 text-slate-300">
-                {events.length} eventi totali
+                {activeEvents.length} eventi attivi
               </span>
             </>
           )}
