@@ -20,14 +20,15 @@ import {
   FileText,
   Building2,
   RotateCcw,
+  Lightbulb,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
 export function ReportsCenter() {
   const { reports, events, organizers, resolveReport, reopenReport, setActiveTab } = useAdmin();
 
-  // Tab: "events" (Segnalazioni Eventi) | "bugs" (Segnalazioni Bug & Sistema)
-  const [activeTabType, setActiveTabType] = useState<"events" | "bugs">("events");
+  // Tab: "events" (Segnalazioni Eventi) | "bugs" (Segnalazioni Bug & Sistema) | "suggerimenti" (Suggerimenti & Idee)
+  const [activeTabType, setActiveTabType] = useState<"events" | "bugs" | "suggerimenti">("events");
 
   // Filters State
   const [searchTerm, setSearchTerm] = useState("");
@@ -76,15 +77,18 @@ export function ReportsCenter() {
     return `${y}-${m}-${day}`;
   };
 
-  // Divisione delle segnalazioni per macro-categoria (Eventi vs Bug)
-  const { eventReports, bugReports } = useMemo(() => {
+  // Divisione delle segnalazioni per macro-categoria (Eventi vs Bug vs Suggerimenti)
+  const { eventReports, bugReports, suggerimentiReports } = useMemo(() => {
     const evList: ReportItemDB[] = [];
     const bugList: ReportItemDB[] = [];
+    const suggList: ReportItemDB[] = [];
 
     reports.forEach((r) => {
       const cat = (r.categoria || "").toLowerCase();
       const tipo = (r.tipo || "").toLowerCase();
-      if (cat === "bugs" || cat === "bug" || cat === "suggerimenti" || tipo === "bug") {
+      if (cat === "suggerimenti" || cat === "suggerimento" || tipo === "suggerimento") {
+        suggList.push(r);
+      } else if (cat === "bugs" || cat === "bug" || tipo === "bug") {
         bugList.push(r);
       } else {
         // "events", "evento", default
@@ -92,7 +96,7 @@ export function ReportsCenter() {
       }
     });
 
-    return { eventReports: evList, bugReports: bugList };
+    return { eventReports: evList, bugReports: bugList, suggerimentiReports: suggList };
   }, [reports]);
 
   // Conteggi Da Risolvere
@@ -104,9 +108,18 @@ export function ReportsCenter() {
     () => bugReports.filter((r) => r.stato !== "risolto").length,
     [bugReports]
   );
+  const pendingSuggerimentiCount = useMemo(
+    () => suggerimentiReports.filter((r) => r.stato !== "risolto").length,
+    [suggerimentiReports]
+  );
 
   // Lista attiva in base al tab selezionato
-  const currentTabReports = activeTabType === "events" ? eventReports : bugReports;
+  const currentTabReports =
+    activeTabType === "events"
+      ? eventReports
+      : activeTabType === "bugs"
+      ? bugReports
+      : suggerimentiReports;
 
   // Motivazioni preimpostate & dinamiche per il filtro
   const availableMotivations = useMemo(() => {
@@ -117,6 +130,11 @@ export function ReportsCenter() {
       set.add("Evento annullato o non svolto");
       set.add("Spam / Contenuto inappropriato");
       set.add("Luogo o data errati");
+      set.add("Altro");
+    } else if (activeTabType === "suggerimenti") {
+      set.add("Nuova funzionalità");
+      set.add("Miglioramento interfaccia / UI");
+      set.add("Nuova categoria o filtro");
       set.add("Altro");
     }
 
@@ -249,7 +267,7 @@ export function ReportsCenter() {
         </div>
       </div>
 
-      {/* Tabs: Divisione tra Segnalazioni su Eventi e Segnalazioni sui Bug */}
+      {/* Tabs: Divisione tra Segnalazioni su Eventi, Bug e Suggerimenti */}
       <div className="flex border-b border-[#1e293b] gap-2">
         <button
           onClick={() => {
@@ -296,11 +314,34 @@ export function ReportsCenter() {
             </span>
           )}
         </button>
+
+        <button
+          onClick={() => {
+            setActiveTabType("suggerimenti");
+            setSelectedMotivo("all");
+          }}
+          className={`pb-3.5 px-4 text-sm font-semibold flex items-center gap-2 border-b-2 transition ${
+            activeTabType === "suggerimenti"
+              ? "border-amber-500 text-amber-400"
+              : "border-transparent text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          <Lightbulb className="w-4 h-4" />
+          Suggerimenti & Idee
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#141d2e] border border-slate-700 text-slate-300">
+            {suggerimentiReports.length}
+          </span>
+          {pendingSuggerimentiCount > 0 && (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              {pendingSuggerimentiCount} da valutare
+            </span>
+          )}
+        </button>
       </div>
 
       {/* Filter Toolbar */}
       <div className="p-4 rounded-xl bg-[#0f172a] border border-[#1e293b] flex flex-wrap gap-3 items-center justify-between">
-        {/* Search Bar per Evento o Organizzatore (o Titolo/Dispositivo per Bug) */}
+        {/* Search Bar */}
         <div className="flex-1 min-w-[260px] relative">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
@@ -308,7 +349,9 @@ export function ReportsCenter() {
             placeholder={
               activeTabType === "events"
                 ? "Cerca per nome evento, organizzatore o segnalatore..."
-                : "Cerca per titolo bug, dispositivo, descrizione o email..."
+                : activeTabType === "bugs"
+                ? "Cerca per titolo bug, dispositivo, descrizione o email..."
+                : "Cerca per idea, testo suggerimento, dispositivo o utente..."
             }
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -410,13 +453,23 @@ export function ReportsCenter() {
                   <th className="px-4 py-3 text-center">Stato</th>
                   <th className="px-4 py-3 text-right">Azioni</th>
                 </tr>
-              ) : (
+              ) : activeTabType === "bugs" ? (
                 <tr>
                   <th className="px-4 py-3">Data</th>
                   <th className="px-4 py-3">Titolo Bug / Oggetto</th>
                   <th className="px-4 py-3">Dispositivo & Versione</th>
                   <th className="px-4 py-3">Descrizione Problema</th>
                   <th className="px-4 py-3">Segnalatore</th>
+                  <th className="px-4 py-3 text-center">Stato</th>
+                  <th className="px-4 py-3 text-right">Azioni</th>
+                </tr>
+              ) : (
+                <tr>
+                  <th className="px-4 py-3">Data</th>
+                  <th className="px-4 py-3">Oggetto / Titolo</th>
+                  <th className="px-4 py-3">Dispositivo & Versione</th>
+                  <th className="px-4 py-3">Descrizione Suggerimento</th>
+                  <th className="px-4 py-3">Utente Proponente</th>
                   <th className="px-4 py-3 text-center">Stato</th>
                   <th className="px-4 py-3 text-right">Azioni</th>
                 </tr>
@@ -483,7 +536,7 @@ export function ReportsCenter() {
                             className="font-bold text-white text-sm line-clamp-1"
                             title={rep.titoloTarget || rep.motivo}
                           >
-                            {rep.titoloTarget || rep.motivo || "Segnalazione Bug"}
+                            {rep.titoloTarget || rep.motivo || (activeTabType === "suggerimenti" ? "Suggerimento Utente" : "Segnalazione Bug")}
                           </div>
                           {rep.gravita && (
                             <span className="text-[10px] px-1.5 py-0.2 rounded font-semibold bg-red-500/10 text-red-400 border border-red-500/20 inline-block mt-0.5">

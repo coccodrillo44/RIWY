@@ -180,6 +180,14 @@ export function normalizeCategory(cat: string | undefined): string {
   ) {
     return "Nuove Aperture";
   }
+  if (
+    trimmed.includes("scont") ||
+    trimmed.includes("promozion") ||
+    trimmed.includes("offerta") ||
+    trimmed.includes("offerte")
+  ) {
+    return "Sconti & Promozioni";
+  }
 
   return cat;
 }
@@ -201,6 +209,8 @@ export function getCategoryBadgeClass(category: string | undefined): string {
       return "bg-orange-500/15 text-orange-400 border-orange-500/30";
     case "Nuove Aperture":
       return "bg-cyan-500/15 text-cyan-400 border-cyan-500/30";
+    case "Sconti & Promozioni":
+      return "bg-rose-500/15 text-rose-400 border-rose-500/30";
     default:
       return "bg-slate-500/15 text-slate-400 border-slate-500/30";
   }

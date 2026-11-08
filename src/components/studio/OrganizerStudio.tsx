@@ -38,6 +38,7 @@ const CATEGORIES = [
   "Famiglia & Bambini",
   "Fiere & Mercati",
   "Nuove Aperture",
+  "Sconti & Promozioni",
 ];
 
 const PROVINCES = ["FI", "PI", "LU", "SI", "AR", "LI", "MS", "GR", "PO", "PT"] as const;

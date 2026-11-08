@@ -28,6 +28,7 @@ const CATEGORY_COLORS: Record<string, { fill: string; stroke: string; bg: string
   "Famiglia & Bambini": { fill: "#ec4899", stroke: "#db2777", bg: "bg-pink-500", text: "text-pink-400" },
   "Fiere & Mercati": { fill: "#f97316", stroke: "#ea580c", bg: "bg-orange-500", text: "text-orange-400" },
   "Nuove Aperture": { fill: "#06b6d4", stroke: "#0891b2", bg: "bg-cyan-500", text: "text-cyan-400" },
+  "Sconti & Promozioni": { fill: "#e11d48", stroke: "#be123c", bg: "bg-rose-500", text: "text-rose-400" },
   "Altro": { fill: "#64748b", stroke: "#475569", bg: "bg-slate-500", text: "text-slate-400" },
 };
 

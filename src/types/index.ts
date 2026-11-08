@@ -106,6 +106,7 @@ export interface RichiestaOrganizzatoreDB {
   linkedin?: string;
   emailVerificata?: boolean;
   motivoRifiuto?: string;
+  timestampRifiuto?: number;
 }
 
 export interface ReportItemDB {
