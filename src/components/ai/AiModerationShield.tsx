@@ -518,16 +518,11 @@ export function AiModerationShield() {
                       <h3 className="text-base font-bold text-white tracking-tight flex items-center space-x-2">
                         <span>{ev.titolo || "Senza titolo"}</span>
                       </h3>
-                      <div className="flex items-center space-x-2 text-xs text-slate-400 mt-1">
-                        <Building2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                        <span className="font-semibold text-slate-200">
+                      <div className="flex items-center space-x-2 text-xs text-slate-300 mt-1">
+                        <Building2 className="w-4 h-4 text-amber-400 shrink-0" />
+                        <span className="font-bold text-amber-300/90 text-sm">
                           {ev.organizzatore || "Organizzatore"}
                         </span>
-                        {ev.idOrganizzatore && (
-                          <span className="text-[10px] text-slate-500 font-mono">
-                            ({ev.idOrganizzatore})
-                          </span>
-                        )}
                       </div>
                     </div>
 
@@ -690,13 +685,8 @@ export function AiModerationShield() {
 
               <div>
                 <span className="text-xs text-slate-400">Organizzatore:</span>
-                <p className="text-sm text-slate-200">
-                  {selectedEventModal.organizzatore}{" "}
-                  {selectedEventModal.idOrganizzatore && (
-                    <span className="text-xs text-slate-500">
-                      (UID: {selectedEventModal.idOrganizzatore})
-                    </span>
-                  )}
+                <p className="text-sm font-bold text-amber-300">
+                  {selectedEventModal.organizzatore || "Organizzatore"}
                 </p>
               </div>
 
