@@ -22,6 +22,7 @@ import {
   CreateOwnEnteData,
   BADGES_DISPONIBILI,
   BadgeDef,
+  EventoRespintoModerazione,
 } from "@/types";
 import { auth, rtdb, storage, googleProvider } from "@/lib/firebase";
 import { processAndUploadEventImage } from "@/lib/imageUtils";
@@ -75,12 +76,15 @@ interface AdminContextType {
   featureFlags: FeatureFlagDB[];
   analytics: AnalyticsDB;
   onlineUsersCount: number;
+  rejectedEvents: EventoRespintoModerazione[];
   // Actions
   toggleBooster: (eventId: string) => Promise<void>;
   toggleOscurato: (eventId: string, oscurato: boolean, motivo?: string) => Promise<void>;
   saveEventEdit: (event: EventoDB) => Promise<void>;
   deleteEvent: (eventId: string, motivo: string) => Promise<void>;
   updateUserStatus: (uid: string, nuovoStato: 'attivo' | 'sospeso' | 'bannato' | 'shadowbanned') => Promise<void>;
+  markRejectedEventAsExamined: (id: string) => Promise<void>;
+  deleteRejectedEvent: (id: string) => Promise<void>;
   approveOrganizerRequest: (request: RichiestaOrganizzatoreDB) => Promise<void>;
   rejectOrganizerRequest: (idRichiesta: string, motivo: string) => Promise<void>;
   sendChatMessageToEnte: (idEnte: string, testo: string) => Promise<boolean>;
@@ -204,6 +208,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     guestsCount: 0,
     tabViews: {},
   });
+  const [rejectedEvents, setRejectedEvents] = useState<EventoRespintoModerazione[]>([]);
 
   const notify = useCallback((type: ToastMessage["type"], text: string) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -509,6 +514,31 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
             );
           },
           fail("feature_flags")
+        )
+      );
+
+      // Moderazione Respinti (/moderazione_respinti)
+      unsubs.push(
+        onValue(
+          ref(rtdb, "moderazione_respinti"),
+          (snap) => {
+            if (snap.exists()) {
+              const list: EventoRespintoModerazione[] = Object.entries(
+                snap.val() as Record<string, any>
+              )
+                .map(([k, v]) => ({
+                  ...v,
+                  id: k,
+                  timestamp: Number(v.timestamp || 0),
+                  letto: Boolean(v.letto),
+                }))
+                .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+              setRejectedEvents(list);
+            } else {
+              setRejectedEvents([]);
+            }
+          },
+          fail("moderazione_respinti")
         )
       );
     } catch (e) {
@@ -1221,6 +1251,57 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     [addAuditLog, notify]
   );
 
+  // Moderazione AI Shield: Segna come esaminato / da esaminare
+  const markRejectedEventAsExamined = useCallback(
+    async (id: string) => {
+      try {
+        const item = rejectedEvents.find((r) => r.id === id);
+        const nuovoLetto = item ? !item.letto : true;
+        await update(ref(rtdb, `moderazione_respinti/${id}`), {
+          letto: nuovoLetto,
+          stato: nuovoLetto ? "ESAMINATO" : "RESPINTO",
+        });
+        await addAuditLog({
+          azione: nuovoLetto ? "MODERAZIONE_SEGNA_ESAMINATO" : "MODERAZIONE_SEGNA_NON_LETTO",
+          targetTipo: "evento",
+          targetId: id,
+          dettagli: `Evento respinto ${id} (${item?.titolo || ""}) impostato come ${nuovoLetto ? "ESAMINATO" : "DA ESAMINARE"}`,
+        });
+        notify(
+          "success",
+          nuovoLetto
+            ? "Evento contrassegnato come esaminato."
+            : "Evento contrassegnato come da esaminare."
+        );
+      } catch (e) {
+        console.error("Errore aggiornamento moderazione_respinti:", e);
+        notify("error", `Errore aggiornamento: ${errText(e)}`);
+      }
+    },
+    [rejectedEvents, addAuditLog, notify]
+  );
+
+  // Moderazione AI Shield: Elimina record respinto
+  const deleteRejectedEvent = useCallback(
+    async (id: string) => {
+      try {
+        const item = rejectedEvents.find((r) => r.id === id);
+        await remove(ref(rtdb, `moderazione_respinti/${id}`));
+        await addAuditLog({
+          azione: "MODERAZIONE_ELIMINA_RECORD",
+          targetTipo: "evento",
+          targetId: id,
+          dettagli: `Eliminato record moderazione respinta ${id} (${item?.titolo || ""})`,
+        });
+        notify("success", "Record moderazione eliminato.");
+      } catch (e) {
+        console.error("Errore eliminazione moderazione_respinti:", e);
+        notify("error", `Errore eliminazione: ${errText(e)}`);
+      }
+    },
+    [rejectedEvents, addAuditLog, notify]
+  );
+
   // 9. Feature Flag / Kill Switch (state comes back from the /feature_flags listener)
   const toggleFeatureFlag = useCallback(
     async (flagId: string) => {
@@ -1658,6 +1739,9 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         createOwnEnte,
         deleteOwnEnte,
         reinviaEmailVerificaEnte,
+        rejectedEvents,
+        markRejectedEventAsExamined,
+        deleteRejectedEvent,
         addAuditLog,
         loginWithGoogle,
         logout,
