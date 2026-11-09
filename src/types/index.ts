@@ -260,3 +260,18 @@ export const BADGES_DISPONIBILI: BadgeDef[] = [
     descrizione: "Investe con costanza nella visibilità dei propri eventi attraverso promozioni e booster.",
   },
 ];
+
+export interface EventoRespintoModerazione {
+  id: string;
+  titolo: string;
+  descrizione?: string;
+  organizzatore: string;
+  idOrganizzatore?: string;
+  motivoRifiuto: string;
+  campoViolato?: "NESSUNO" | "TITOLO" | "DESCRIZIONE" | "COPERTINA" | "PROGRAMMA" | string;
+  urlCopertina?: string;
+  urlProgramma?: string;
+  timestamp: number;
+  letto?: boolean;
+  stato?: "RESPINTO" | "ESAMINATO" | string;
+}

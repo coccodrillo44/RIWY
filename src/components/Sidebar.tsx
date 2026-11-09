@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 
 export function Sidebar() {
-  const { activeTab, setActiveTab, reports, organizerRequests, isLiveConnected, adminEmail, logout } = useAdmin();
+  const { activeTab, setActiveTab, reports, organizerRequests, rejectedEvents, isLiveConnected, adminEmail, logout } = useAdmin();
 
   const pendingReportsCount = useMemo(() => {
     return reports.filter((r) => !r.stato || r.stato === "nuovo" || r.stato === "in_lavorazione").length;
@@ -28,6 +28,10 @@ export function Sidebar() {
   const pendingOrgCount = useMemo(() => {
     return organizerRequests.filter((o) => !o.stato || o.stato === "IN_ATTESA").length;
   }, [organizerRequests]);
+
+  const pendingModerationCount = useMemo(() => {
+    return rejectedEvents.filter((r) => !r.letto).length;
+  }, [rejectedEvents]);
 
   const navItems = [
     { id: "dashboard", label: "Dashboard Cockpit", icon: LayoutDashboard },
@@ -51,7 +55,13 @@ export function Sidebar() {
     { id: "map", label: "Mappa Live Toscana", icon: MapPin },
     { id: "feature_flags", label: "Kill Switch & Flags", icon: ToggleLeft },
     { id: "broadcast", label: "Notifiche Broadcast", icon: BellRing },
-    { id: "ai_moderation", label: "AI Shield Moderation", icon: ShieldCheck },
+    {
+      id: "ai_moderation",
+      label: "AI Shield Moderation",
+      icon: ShieldCheck,
+      badge: pendingModerationCount > 0 ? pendingModerationCount : null,
+      badgeColor: "bg-red-500",
+    },
     { id: "studio", label: "Studio Organizzatore", icon: Briefcase },
   ];
 
