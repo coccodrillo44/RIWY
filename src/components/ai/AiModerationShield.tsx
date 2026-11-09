@@ -31,9 +31,79 @@ import {
 export function AiModerationShield() {
   const {
     rejectedEvents,
+    organizers,
+    users,
+    events,
     markRejectedEventAsExamined,
     deleteRejectedEvent,
   } = useAdmin();
+
+  // Helper robusto per risolvere sempre il nome reale dell'organizzatore o dell'ente
+  const getOrganizerName = (ev: EventoRespintoModerazione): string => {
+    const rawOrg = ev.organizzatore?.trim();
+    const isGenericWord = !rawOrg || rawOrg.toLowerCase() === "organizzatore" || rawOrg === "n/d";
+    const isLikelyUid = Boolean(
+      rawOrg && (rawOrg === ev.idOrganizzatore || (rawOrg.length >= 24 && !rawOrg.includes(" ")))
+    );
+
+    // 1. Cerca per idOrganizzatore nell'elenco enti (/enti)
+    if (ev.idOrganizzatore) {
+      const org = organizers.find(
+        (o) => o.idEnte === ev.idOrganizzatore || o.idCreatore === ev.idOrganizzatore
+      );
+      if (org?.nomeEnte && org.nomeEnte.trim()) return org.nomeEnte.trim();
+
+      // 2. Cerca negli utenti per idOrganizzatore
+      const u = users.find((usr) => usr.firebaseUid === ev.idOrganizzatore);
+      if (u) {
+        if (u.idEnteGestito) {
+          const gestito = organizers.find((o) => o.idEnte === u.idEnteGestito);
+          if (gestito?.nomeEnte && gestito.nomeEnte.trim()) return gestito.nomeEnte.trim();
+        }
+        if (u.username && u.username.trim() && u.username.toLowerCase() !== "utente") {
+          return u.username.trim();
+        }
+      }
+    }
+
+    // 3. Se rawOrg è un nome reale (e non la parola generica né un UID)
+    if (!isGenericWord && !isLikelyUid && rawOrg) {
+      return rawOrg;
+    }
+
+    // 4. Se rawOrg è un idEnte o UID, prova a cercarlo tra gli enti o utenti
+    if (rawOrg) {
+      const orgByRaw = organizers.find((o) => o.idEnte === rawOrg || o.idCreatore === rawOrg);
+      if (orgByRaw?.nomeEnte && orgByRaw.nomeEnte.trim()) return orgByRaw.nomeEnte.trim();
+      const uByRaw = users.find((usr) => usr.firebaseUid === rawOrg);
+      if (uByRaw?.username && uByRaw.username.trim()) return uByRaw.username.trim();
+    }
+
+    // 5. Cerca tra gli eventi pubblicati dall'organizzatore
+    if (ev.idOrganizzatore) {
+      const matchedEv = events.find(
+        (e) =>
+          (e.idOrganizzatore === ev.idOrganizzatore || e.creatoDaUid === ev.idOrganizzatore) &&
+          e.organizzatore &&
+          e.organizzatore.toLowerCase() !== "organizzatore"
+      );
+      if (matchedEv?.organizzatore) return matchedEv.organizzatore.trim();
+    }
+
+    // 6. Fallback su username o email dell'utente
+    if (ev.idOrganizzatore) {
+      const u = users.find((usr) => usr.firebaseUid === ev.idOrganizzatore);
+      if (u?.username && u.username.trim()) return u.username.trim();
+      if (u?.email) return u.email.split("@")[0];
+    }
+
+    // 7. Ultimo fallback se rawOrg non è generico
+    if (rawOrg && rawOrg.toLowerCase() !== "organizzatore") {
+      return rawOrg;
+    }
+
+    return "Nome Ente non specificato";
+  };
 
   // Search and filter states
   const [searchQuery, setSearchQuery] = useState("");
@@ -77,7 +147,8 @@ export function AiModerationShield() {
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchTitle = ev.titolo?.toLowerCase().includes(q);
-        const matchOrg = ev.organizzatore?.toLowerCase().includes(q);
+        const resolvedOrg = getOrganizerName(ev).toLowerCase();
+        const matchOrg = resolvedOrg.includes(q) || ev.organizzatore?.toLowerCase().includes(q);
         const matchReason = ev.motivoRifiuto?.toLowerCase().includes(q);
         const matchDesc = ev.descrizione?.toLowerCase().includes(q);
         if (!matchTitle && !matchOrg && !matchReason && !matchDesc) return false;
@@ -85,7 +156,7 @@ export function AiModerationShield() {
 
       return true;
     });
-  }, [rejectedEvents, statusFilter, fieldFilter, searchQuery]);
+  }, [rejectedEvents, statusFilter, fieldFilter, searchQuery, organizers, users, events]);
 
   // Interactive tester states (preserved for manual testing)
   const [testerText, setTesterText] = useState(
@@ -521,7 +592,7 @@ export function AiModerationShield() {
                       <div className="flex items-center space-x-2 text-xs text-slate-300 mt-1">
                         <Building2 className="w-4 h-4 text-amber-400 shrink-0" />
                         <span className="font-bold text-amber-300/90 text-sm">
-                          {ev.organizzatore || "Organizzatore"}
+                          {getOrganizerName(ev)}
                         </span>
                       </div>
                     </div>
@@ -686,7 +757,7 @@ export function AiModerationShield() {
               <div>
                 <span className="text-xs text-slate-400">Organizzatore:</span>
                 <p className="text-sm font-bold text-amber-300">
-                  {selectedEventModal.organizzatore || "Organizzatore"}
+                  {selectedEventModal ? getOrganizerName(selectedEventModal) : ""}
                 </p>
               </div>
 
