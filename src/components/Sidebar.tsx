@@ -26,7 +26,9 @@ export function Sidebar() {
   }, [reports]);
 
   const pendingOrgCount = useMemo(() => {
-    return organizerRequests.filter((o) => !o.stato || o.stato === "IN_ATTESA").length;
+    return organizerRequests.filter(
+      (o) => !o.stato || o.stato === "IN_ATTESA" || o.stato === "IN_ATTESA_VERIFICA_EMAIL"
+    ).length;
   }, [organizerRequests]);
 
   const pendingModerationCount = useMemo(() => {
