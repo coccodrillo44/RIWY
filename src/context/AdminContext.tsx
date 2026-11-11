@@ -419,21 +419,28 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
                   const idEv = r.idEvento || (categoryKey === "events" ? (r.targetId || repId) : undefined);
                   const idOrg = r.idOrganizzatore || undefined;
                   const nomeOrg = r.organizzatore || r.nomeOrganizzatore || undefined;
-                  const tit = r.titoloEvento || r.titoloTarget || r.titolo || undefined;
-                  const segn = r.emailSegnalante || r.segnalatoDa || r.emailUtente || r.segnalatoreUid || undefined;
+                  const tit = r.titoloEvento || r.titoloTarget || r.titolo || (categoryKey === "chats" ? (r.nomeSegnalato ? `Chat con ${r.nomeSegnalato}` : "Segnalazione Chat") : undefined);
+                  const segn = r.emailSegnalante || r.segnalatoDa || r.emailUtente || r.segnalatoreUid || r.idSegnalatore || undefined;
                   const det = r.dettaglio || r.descrizione || r.dettagli || undefined;
 
                   list.push({
                     ...r,
                     id: repId,
                     categoria: categoryKey,
-                    targetId: r.targetId || r.idEvento || r.idOrganizzatore || repId,
+                    targetId: r.targetId || r.chatRoomId || r.chatId || r.idEvento || r.idOrganizzatore || repId,
                     idEvento: idEv,
                     titoloEvento: tit,
                     titoloTarget: tit,
                     idOrganizzatore: idOrg,
                     organizzatore: nomeOrg,
                     nomeOrganizzatore: nomeOrg,
+                    chatRoomId: r.chatRoomId || r.chatId || undefined,
+                    idSegnalato: r.idSegnalato || undefined,
+                    nomeSegnalato: r.nomeSegnalato || undefined,
+                    idSegnalatore: r.idSegnalatore || r.segnalatoreUid || undefined,
+                    nomeSegnalatore: r.nomeSegnalatore || undefined,
+                    nomeSegnalante: r.nomeSegnalante || r.nomeSegnalatore || undefined,
+                    ultimiMessaggi: r.ultimiMessaggi || undefined,
                     segnalatoreUid: segn,
                     emailSegnalante: r.emailSegnalante || undefined,
                     emailUtente: r.emailUtente || undefined,

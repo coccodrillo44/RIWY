@@ -120,6 +120,13 @@ export interface ReportItemDB {
   idOrganizzatore?: string;
   organizzatore?: string;
   nomeOrganizzatore?: string;
+  chatRoomId?: string;
+  idSegnalato?: string;
+  nomeSegnalato?: string;
+  idSegnalatore?: string;
+  nomeSegnalatore?: string;
+  nomeSegnalante?: string;
+  ultimiMessaggi?: any;
   segnalatoreUid?: string;
   emailSegnalante?: string;
   emailUtente?: string;
