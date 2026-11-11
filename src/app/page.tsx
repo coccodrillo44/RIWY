@@ -9,7 +9,6 @@ import { UsersManager } from "@/components/users/UsersManager";
 import { OrganizersManager } from "@/components/organizers/OrganizersManager";
 import { AuditTimeMachine } from "@/components/audit/AuditTimeMachine";
 import { ReportsCenter } from "@/components/reports/ReportsCenter";
-import { ChatReportsManager } from "@/components/reports/ChatReportsManager";
 import { TuscanyMapViewer } from "@/components/map/TuscanyMapViewer";
 import { FeatureFlagsManager } from "@/components/features/FeatureFlagsManager";
 import { BroadcastNotificationHub } from "@/components/broadcast/BroadcastNotificationHub";
@@ -171,7 +170,6 @@ export default function AdminApp() {
           {activeTab === "organizers" && <OrganizersManager />}
           {activeTab === "audit" && <AuditTimeMachine />}
           {activeTab === "reports" && <ReportsCenter />}
-          {activeTab === "chat_reports" && <ChatReportsManager />}
           {activeTab === "map" && <TuscanyMapViewer />}
           {activeTab === "feature_flags" && <FeatureFlagsManager />}
           {activeTab === "broadcast" && <BroadcastNotificationHub />}

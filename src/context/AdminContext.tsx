@@ -418,42 +418,87 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
                 if (typeof catVal !== "object" || catVal === null) return;
                 Object.entries(catVal as Record<string, any>).forEach(([repId, r]) => {
                   if (typeof r !== "object" || r === null) return;
+                  const isChat =
+                    categoryKey === "chats" ||
+                    categoryKey === "chat" ||
+                    categoryKey === "users" ||
+                    categoryKey === "user" ||
+                    String(r.tipo || "").toLowerCase() === "chat";
                   const idEv = r.idEvento || (categoryKey === "events" ? (r.targetId || repId) : undefined);
                   const idOrg = r.idOrganizzatore || undefined;
                   const nomeOrg = r.organizzatore || r.nomeOrganizzatore || undefined;
-                  const tit = r.titoloEvento || r.titoloTarget || r.titolo || (categoryKey === "chats" ? (r.nomeSegnalato ? `Chat con ${r.nomeSegnalato}` : "Segnalazione Chat") : undefined);
-                  const segn = r.emailSegnalante || r.segnalatoDa || r.emailUtente || r.segnalatoreUid || r.idSegnalatore || undefined;
+                  const nomeTargetUser = r.nomeSegnalato || r.nomeControparte || undefined;
+                  const idTargetUser = r.idSegnalato || r.idControparte || undefined;
+                  const idReporterUser = r.idSegnalatore || r.idSegnalante || r.segnalatoreUid || undefined;
+                  const nomeReporterUser = r.nomeSegnalatore || r.nomeSegnalante || undefined;
+                  const tit =
+                    r.titoloEvento ||
+                    r.titoloTarget ||
+                    r.titolo ||
+                    (isChat
+                      ? nomeTargetUser
+                        ? `Chat con ${nomeTargetUser}`
+                        : "Segnalazione Chat"
+                      : undefined);
+                  const segn =
+                    r.emailSegnalante ||
+                    r.segnalatoDa ||
+                    r.emailUtente ||
+                    r.segnalatoreUid ||
+                    idReporterUser ||
+                    undefined;
                   const det = r.dettaglio || r.descrizione || r.dettagli || undefined;
+
+                  let parsedUltimiMessaggi: string | undefined = undefined;
+                  if (typeof r.ultimiMessaggi === "string") {
+                    parsedUltimiMessaggi = r.ultimiMessaggi;
+                  } else if (Array.isArray(r.ultimiMessaggi)) {
+                    parsedUltimiMessaggi = r.ultimiMessaggi
+                      .map((m: any) => {
+                        if (!m) return "";
+                        if (typeof m === "string") return m;
+                        const sender = m.nome || m.senderName || m.da || "";
+                        const text = m.testo || m.text || m.message || "";
+                        return sender ? `${sender}: ${text}` : text;
+                      })
+                      .filter(Boolean)
+                      .join(" | ");
+                  } else if (r.ultimiMessaggi && typeof r.ultimiMessaggi === "object") {
+                    parsedUltimiMessaggi = r.ultimiMessaggi.testo || r.ultimiMessaggi.text || JSON.stringify(r.ultimiMessaggi);
+                  }
 
                   list.push({
                     ...r,
-                    id: repId,
+                    id: String(repId),
                     categoria: categoryKey,
-                    targetId: r.targetId || r.chatRoomId || r.chatId || r.idEvento || r.idOrganizzatore || repId,
-                    idEvento: idEv,
-                    titoloEvento: tit,
-                    titoloTarget: tit,
-                    idOrganizzatore: idOrg,
-                    organizzatore: nomeOrg,
-                    nomeOrganizzatore: nomeOrg,
-                    chatRoomId: r.chatRoomId || r.chatId || undefined,
-                    chatId: r.chatId || r.chatRoomId || undefined,
-                    idSegnalato: r.idSegnalato || undefined,
-                    nomeSegnalato: r.nomeSegnalato || undefined,
-                    idSegnalatore: r.idSegnalatore || r.segnalatoreUid || undefined,
-                    nomeSegnalatore: r.nomeSegnalatore || undefined,
-                    nomeSegnalante: r.nomeSegnalante || r.nomeSegnalatore || undefined,
-                    ultimiMessaggi: r.ultimiMessaggi || undefined,
-                    segnalatoreUid: segn,
-                    emailSegnalante: r.emailSegnalante || undefined,
-                    emailUtente: r.emailUtente || undefined,
-                    segnalatoDa: r.segnalatoDa || undefined,
-                    motivo: r.motivo || r.titolo || "Nessun motivo",
-                    dettaglio: det,
-                    descrizione: det,
-                    dispositivo: r.dispositivo || undefined,
-                    versioneApp: r.versioneApp || undefined,
-                    gravita: r.gravita || undefined,
+                    targetId: String(r.targetId || r.chatRoomId || r.chatId || r.idEvento || r.idOrganizzatore || repId),
+                    idEvento: idEv ? String(idEv) : undefined,
+                    titoloEvento: tit ? String(tit) : undefined,
+                    titoloTarget: tit ? String(tit) : undefined,
+                    idOrganizzatore: idOrg ? String(idOrg) : undefined,
+                    organizzatore: nomeOrg ? String(nomeOrg) : undefined,
+                    nomeOrganizzatore: nomeOrg ? String(nomeOrg) : undefined,
+                    chatRoomId: r.chatRoomId ? String(r.chatRoomId) : r.chatId ? String(r.chatId) : undefined,
+                    chatId: r.chatId ? String(r.chatId) : r.chatRoomId ? String(r.chatRoomId) : undefined,
+                    idSegnalato: idTargetUser ? String(idTargetUser) : undefined,
+                    nomeSegnalato: nomeTargetUser ? String(nomeTargetUser) : undefined,
+                    idControparte: r.idControparte ? String(r.idControparte) : undefined,
+                    nomeControparte: r.nomeControparte ? String(r.nomeControparte) : undefined,
+                    idSegnalatore: idReporterUser ? String(idReporterUser) : undefined,
+                    idSegnalante: r.idSegnalante ? String(r.idSegnalante) : undefined,
+                    nomeSegnalatore: nomeReporterUser ? String(nomeReporterUser) : undefined,
+                    nomeSegnalante: nomeReporterUser ? String(nomeReporterUser) : undefined,
+                    ultimiMessaggi: parsedUltimiMessaggi,
+                    segnalatoreUid: segn ? String(segn) : undefined,
+                    emailSegnalante: r.emailSegnalante ? String(r.emailSegnalante) : undefined,
+                    emailUtente: r.emailUtente ? String(r.emailUtente) : undefined,
+                    segnalatoDa: r.segnalatoDa ? String(r.segnalatoDa) : undefined,
+                    motivo: String(r.motivo || r.titolo || "Nessun motivo"),
+                    dettaglio: det ? String(det) : undefined,
+                    descrizione: det ? String(det) : undefined,
+                    dispositivo: r.dispositivo ? String(r.dispositivo) : undefined,
+                    versioneApp: r.versioneApp ? String(r.versioneApp) : undefined,
+                    gravita: r.gravita ? String(r.gravita) : undefined,
                     stato: normalizeReportStatus(r.stato),
                   });
                 });

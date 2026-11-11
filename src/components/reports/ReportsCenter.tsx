@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useAdmin } from "@/context/AdminContext";
-import { ReportItemDB } from "@/types";
+import { ReportItemDB, ChatMessageDB } from "@/types";
 import {
   AlertTriangle,
   AlertCircle,
@@ -22,11 +22,40 @@ import {
   RotateCcw,
   Lightbulb,
   MessageCircle,
+  MessageSquare,
+  Copy,
+  Check,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
+function safeStr(val: any): string {
+  if (val === null || val === undefined) return "";
+  if (typeof val === "string") return val;
+  if (typeof val === "number" || typeof val === "boolean") return String(val);
+  if (Array.isArray(val)) {
+    return val
+      .map((item) => {
+        if (!item) return "";
+        if (typeof item === "string") return item;
+        const sender = item.nome || item.senderName || item.da || "";
+        const text =
+          item.testo ||
+          item.text ||
+          item.message ||
+          (typeof item === "object" ? JSON.stringify(item) : String(item));
+        return sender ? `${sender}: ${text}` : text;
+      })
+      .filter(Boolean)
+      .join(" | ");
+  }
+  if (typeof val === "object") {
+    return val.testo || val.text || val.message || JSON.stringify(val);
+  }
+  return String(val);
+}
+
 export function ReportsCenter() {
-  const { reports, events, organizers, resolveReport, reopenReport, setActiveTab } = useAdmin();
+  const { reports, events, organizers, resolveReport, reopenReport, fetchChatMessages } = useAdmin();
 
   // Tab: "events" (Segnalazioni Eventi) | "chats" (Segnalazioni Chat) | "bugs" (Segnalazioni Bug & Sistema) | "suggerimenti" (Suggerimenti & Idee)
   const [activeTabType, setActiveTabType] = useState<"events" | "chats" | "bugs" | "suggerimenti">("events");
@@ -41,6 +70,11 @@ export function ReportsCenter() {
   const [resolvingReport, setResolvingReport] = useState<ReportItemDB | null>(null);
   const [resolutionNote, setResolutionNote] = useState("");
   const [inspectingReport, setInspectingReport] = useState<ReportItemDB | null>(null);
+
+  // Chat inspection state
+  const [chatMessages, setChatMessages] = useState<ChatMessageDB[]>([]);
+  const [isLoadingChat, setIsLoadingChat] = useState<boolean>(false);
+  const [copiedChatId, setCopiedChatId] = useState<boolean>(false);
 
   // Helper per estrarre il nome dell'organizzatore
   const getEventOrganizer = (rep: ReportItemDB): string => {
@@ -78,6 +112,71 @@ export function ReportsCenter() {
     return `${y}-${m}-${day}`;
   };
 
+  // Helper per verificare se un report è di tipo chat
+  const isChatReport = (rep: ReportItemDB | null): boolean => {
+    if (!rep) return false;
+    const cat = String(rep.categoria || "").toLowerCase();
+    const tipo = String(rep.tipo || "").toLowerCase();
+    return (
+      cat === "chats" ||
+      cat === "chat" ||
+      cat === "users" ||
+      cat === "user" ||
+      cat === "utenti" ||
+      tipo === "chat" ||
+      tipo === "utente" ||
+      Boolean(rep.chatRoomId || rep.chatId)
+    );
+  };
+
+  // Caricamento cronologia messaggi quando si apre la modale di una chat
+  useEffect(() => {
+    if (!inspectingReport) {
+      setChatMessages([]);
+      return;
+    }
+
+    const isChat = activeTabType === "chats" || isChatReport(inspectingReport);
+    const chatId = safeStr(inspectingReport.chatRoomId || inspectingReport.chatId || inspectingReport.targetId);
+
+    if (isChat && chatId && fetchChatMessages) {
+      setIsLoadingChat(true);
+      fetchChatMessages(chatId)
+        .then((msgs) => setChatMessages(Array.isArray(msgs) ? msgs : []))
+        .catch((err) => {
+          console.error("Errore recupero messaggi chat:", err);
+          setChatMessages([]);
+        })
+        .finally(() => setIsLoadingChat(false));
+    } else {
+      setChatMessages([]);
+    }
+  }, [inspectingReport, activeTabType, fetchChatMessages]);
+
+  const reloadChat = async () => {
+    if (!inspectingReport || !fetchChatMessages) return;
+    const chatId = safeStr(inspectingReport.chatRoomId || inspectingReport.chatId || inspectingReport.targetId);
+    if (!chatId) return;
+    setIsLoadingChat(true);
+    try {
+      const msgs = await fetchChatMessages(chatId);
+      setChatMessages(Array.isArray(msgs) ? msgs : []);
+    } catch {
+      setChatMessages([]);
+    } finally {
+      setIsLoadingChat(false);
+    }
+  };
+
+  const handleCopyChatId = (id: string) => {
+    if (!id) return;
+    try {
+      navigator.clipboard?.writeText(id);
+      setCopiedChatId(true);
+      setTimeout(() => setCopiedChatId(false), 2000);
+    } catch (_) {}
+  };
+
   // Divisione delle segnalazioni per macro-categoria (Eventi vs Chat vs Bug vs Suggerimenti)
   const { eventReports, chatReports, bugReports, suggerimentiReports } = useMemo(() => {
     const evList: ReportItemDB[] = [];
@@ -86,8 +185,8 @@ export function ReportsCenter() {
     const suggList: ReportItemDB[] = [];
 
     reports.forEach((r) => {
-      const cat = (r.categoria || "").toLowerCase();
-      const tipo = (r.tipo || "").toLowerCase();
+      const cat = String(r.categoria || "").toLowerCase();
+      const tipo = String(r.tipo || "").toLowerCase();
       if (cat === "suggerimenti" || cat === "suggerimento" || tipo === "suggerimento") {
         suggList.push(r);
       } else if (cat === "bugs" || cat === "bug" || tipo === "bug") {
@@ -99,7 +198,8 @@ export function ReportsCenter() {
         cat === "user" ||
         cat === "utenti" ||
         tipo === "chat" ||
-        tipo === "utente"
+        tipo === "utente" ||
+        Boolean(r.chatRoomId || r.chatId)
       ) {
         chatList.push(r);
       } else {
@@ -163,8 +263,9 @@ export function ReportsCenter() {
     }
 
     currentTabReports.forEach((r) => {
-      if (r.motivo && r.motivo.trim() && r.motivo !== "Nessun motivo") {
-        set.add(r.motivo.trim());
+      const m = safeStr(r.motivo).trim();
+      if (m && m !== "Nessun motivo") {
+        set.add(m);
       }
     });
 
@@ -181,7 +282,7 @@ export function ReportsCenter() {
 
       // 2. Filtro Motivazione (per Segnalazioni Eventi e Chat)
       if ((activeTabType === "events" || activeTabType === "chats") && selectedMotivo !== "all") {
-        const motivoNorm = (rep.motivo || "").trim().toLowerCase();
+        const motivoNorm = safeStr(rep.motivo).trim().toLowerCase();
         const selNorm = selectedMotivo.trim().toLowerCase();
         if (motivoNorm !== selNorm) return false;
       }
@@ -198,9 +299,9 @@ export function ReportsCenter() {
         if (activeTabType === "events") {
           const title = getEventTitle(rep).toLowerCase();
           const org = getEventOrganizer(rep).toLowerCase();
-          const reporter = (rep.emailSegnalante || rep.segnalatoreUid || rep.segnalatoDa || "").toLowerCase();
-          const reason = (rep.motivo || "").toLowerCase();
-          const desc = (rep.descrizione || rep.dettaglio || rep.dettagli || "").toLowerCase();
+          const reporter = safeStr(rep.emailSegnalante || rep.segnalatoreUid || rep.segnalatoDa).toLowerCase();
+          const reason = safeStr(rep.motivo).toLowerCase();
+          const desc = safeStr(rep.descrizione || rep.dettaglio || rep.dettagli).toLowerCase();
 
           const matches =
             title.includes(term) ||
@@ -208,16 +309,18 @@ export function ReportsCenter() {
             reporter.includes(term) ||
             reason.includes(term) ||
             desc.includes(term) ||
-            rep.id.toLowerCase().includes(term);
+            safeStr(rep.id).toLowerCase().includes(term);
 
           if (!matches) return false;
         } else if (activeTabType === "chats") {
-          const targetName = (rep.nomeSegnalato || rep.titoloTarget || "").toLowerCase();
-          const targetUid = (rep.idSegnalato || rep.targetId || "").toLowerCase();
-          const chatId = (rep.chatRoomId || "").toLowerCase();
-          const reporter = (rep.nomeSegnalante || rep.emailSegnalante || rep.segnalatoreUid || "").toLowerCase();
-          const reason = (rep.motivo || "").toLowerCase();
-          const desc = (rep.descrizione || rep.dettaglio || rep.dettagli || "").toLowerCase();
+          const targetName = safeStr(rep.nomeSegnalato || rep.nomeControparte || rep.titoloTarget).toLowerCase();
+          const targetUid = safeStr(rep.idSegnalato || rep.idControparte || rep.targetId).toLowerCase();
+          const chatId = safeStr(rep.chatRoomId || rep.chatId).toLowerCase();
+          const reporter = safeStr(
+            rep.nomeSegnalante || rep.nomeSegnalatore || rep.emailSegnalante || rep.idSegnalante || rep.segnalatoreUid
+          ).toLowerCase();
+          const reason = safeStr(rep.motivo).toLowerCase();
+          const desc = safeStr(rep.descrizione || rep.dettaglio || rep.dettagli).toLowerCase();
 
           const matches =
             targetName.includes(term) ||
@@ -226,21 +329,21 @@ export function ReportsCenter() {
             reporter.includes(term) ||
             reason.includes(term) ||
             desc.includes(term) ||
-            rep.id.toLowerCase().includes(term);
+            safeStr(rep.id).toLowerCase().includes(term);
 
           if (!matches) return false;
         } else {
-          const bugTitle = (rep.titoloTarget || rep.motivo || "").toLowerCase();
-          const desc = (rep.descrizione || rep.dettaglio || rep.dettagli || "").toLowerCase();
-          const device = (rep.dispositivo || "").toLowerCase();
-          const reporter = (rep.emailUtente || rep.segnalatoreUid || rep.emailSegnalante || "").toLowerCase();
+          const bugTitle = safeStr(rep.titoloTarget || rep.motivo).toLowerCase();
+          const desc = safeStr(rep.descrizione || rep.dettaglio || rep.dettagli).toLowerCase();
+          const device = safeStr(rep.dispositivo).toLowerCase();
+          const reporter = safeStr(rep.emailUtente || rep.segnalatoreUid || rep.emailSegnalante).toLowerCase();
 
           const matches =
             bugTitle.includes(term) ||
             desc.includes(term) ||
             device.includes(term) ||
             reporter.includes(term) ||
-            rep.id.toLowerCase().includes(term);
+            safeStr(rep.id).toLowerCase().includes(term);
 
           if (!matches) return false;
         }
@@ -253,9 +356,10 @@ export function ReportsCenter() {
   // Gestione Risoluzione
   const handleConfirmResolution = async () => {
     if (!resolvingReport) return;
+    const cat = resolvingReport.categoria || (activeTabType === "events" ? "events" : activeTabType === "chats" ? "chats" : "bugs");
     await resolveReport(
       resolvingReport.id,
-      resolvingReport.categoria || (activeTabType === "events" ? "events" : "bugs"),
+      cat,
       resolutionNote || "Verificato e gestito secondo policy",
       resolvingReport.idOrganizzatore
     );
@@ -265,9 +369,10 @@ export function ReportsCenter() {
 
   // Gestione Riapertura
   const handleReopen = async (rep: ReportItemDB) => {
+    const cat = rep.categoria || (activeTabType === "events" ? "events" : activeTabType === "chats" ? "chats" : "bugs");
     await reopenReport(
       rep.id,
-      rep.categoria || (activeTabType === "events" ? "events" : activeTabType === "chats" ? "chats" : "bugs"),
+      cat,
       rep.idOrganizzatore
     );
   };
@@ -296,7 +401,7 @@ export function ReportsCenter() {
             Centro Segnalazioni & Moderazione
           </h1>
           <p className="text-sm text-slate-400">
-            Monitoraggio in tempo reale dei ticket utente: anomalie eventi, chat, contenuti e bug applicativi.
+            Monitoraggio in tempo reale dei ticket: segnalazioni chat e messaggi, anomalie eventi, bug e suggerimenti.
           </p>
         </div>
 
@@ -309,14 +414,14 @@ export function ReportsCenter() {
         </div>
       </div>
 
-      {/* Tabs: Divisione tra Segnalazioni su Eventi, Chat, Bug e Suggerimenti */}
-      <div className="flex border-b border-[#1e293b] gap-2">
+      {/* Tabs: Divisione tra Segnalazioni Eventi, Chat, Bug e Suggerimenti */}
+      <div className="flex border-b border-[#1e293b] gap-2 overflow-x-auto">
         <button
           onClick={() => {
             setActiveTabType("events");
             setSelectedMotivo("all");
           }}
-          className={`pb-3.5 px-4 text-sm font-semibold flex items-center gap-2 border-b-2 transition ${
+          className={`pb-3.5 px-4 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
             activeTabType === "events"
               ? "border-amber-500 text-amber-400"
               : "border-transparent text-slate-400 hover:text-slate-200"
@@ -339,7 +444,7 @@ export function ReportsCenter() {
             setActiveTabType("chats");
             setSelectedMotivo("all");
           }}
-          className={`pb-3.5 px-4 text-sm font-semibold flex items-center gap-2 border-b-2 transition ${
+          className={`pb-3.5 px-4 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
             activeTabType === "chats"
               ? "border-amber-500 text-amber-400"
               : "border-transparent text-slate-400 hover:text-slate-200"
@@ -362,7 +467,7 @@ export function ReportsCenter() {
             setActiveTabType("bugs");
             setSelectedMotivo("all");
           }}
-          className={`pb-3.5 px-4 text-sm font-semibold flex items-center gap-2 border-b-2 transition ${
+          className={`pb-3.5 px-4 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
             activeTabType === "bugs"
               ? "border-amber-500 text-amber-400"
               : "border-transparent text-slate-400 hover:text-slate-200"
@@ -385,7 +490,7 @@ export function ReportsCenter() {
             setActiveTabType("suggerimenti");
             setSelectedMotivo("all");
           }}
-          className={`pb-3.5 px-4 text-sm font-semibold flex items-center gap-2 border-b-2 transition ${
+          className={`pb-3.5 px-4 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
             activeTabType === "suggerimenti"
               ? "border-amber-500 text-amber-400"
               : "border-transparent text-slate-400 hover:text-slate-200"
@@ -505,7 +610,7 @@ export function ReportsCenter() {
         </div>
       </div>
 
-      {/* Tabella Segnalazioni (Visualizzazione su righe come per le altre schermate) */}
+      {/* Tabella Segnalazioni */}
       {filteredReports.length > 0 ? (
         <div className="overflow-x-auto rounded-xl border border-[#1e293b] bg-[#0f172a]">
           <table className="w-full text-left text-xs text-slate-300">
@@ -523,7 +628,7 @@ export function ReportsCenter() {
               ) : activeTabType === "chats" ? (
                 <tr>
                   <th className="px-4 py-3">Data</th>
-                  <th className="px-4 py-3">Utente Segnalato</th>
+                  <th className="px-4 py-3">Persone nella Chat</th>
                   <th className="px-4 py-3">Stanza / ID Chat</th>
                   <th className="px-4 py-3">Motivazione & Dettagli</th>
                   <th className="px-4 py-3">Segnalatore</th>
@@ -557,10 +662,18 @@ export function ReportsCenter() {
                 const isResolved = rep.stato === "risolto";
                 const evTitle = getEventTitle(rep);
                 const evOrg = getEventOrganizer(rep);
-                const reporterEmail =
-                  rep.emailSegnalante || rep.emailUtente || rep.segnalatoDa || rep.segnalatoreUid || "Utente";
-                const descriptionText =
-                  rep.descrizione || rep.dettaglio || rep.dettagli || "Nessun dettaglio aggiuntivo";
+                const reporterEmail = safeStr(
+                  rep.emailSegnalante ||
+                    rep.emailUtente ||
+                    rep.nomeSegnalatore ||
+                    rep.nomeSegnalante ||
+                    rep.segnalatoDa ||
+                    rep.segnalatoreUid ||
+                    "Utente"
+                );
+                const descriptionText = safeStr(
+                  rep.descrizione || rep.dettaglio || rep.dettagli || "Nessun dettaglio aggiuntivo"
+                );
 
                 return (
                   <tr key={rep.id} className="hover:bg-[#141d2e]/60 transition">
@@ -571,7 +684,7 @@ export function ReportsCenter() {
                         <span>{formatDate(rep.timestamp)}</span>
                       </div>
                       <span className="text-[10px] text-slate-500 font-mono block mt-0.5">
-                        ID: {rep.id.slice(0, 10)}...
+                        ID: {safeStr(rep.id).slice(0, 10)}...
                       </span>
                     </td>
 
@@ -585,7 +698,7 @@ export function ReportsCenter() {
                           </div>
                           {rep.idEvento && (
                             <span className="text-[10px] text-slate-500 font-mono block mt-0.5">
-                              ID Ev: {rep.idEvento}
+                              ID Ev: {safeStr(rep.idEvento)}
                             </span>
                           )}
                         </td>
@@ -600,36 +713,64 @@ export function ReportsCenter() {
                           </div>
                           {rep.idOrganizzatore && (
                             <span className="text-[10px] text-slate-500 font-mono block mt-0.5 pl-5">
-                              {rep.idOrganizzatore}
+                              {safeStr(rep.idOrganizzatore)}
                             </span>
                           )}
                         </td>
                       </>
                     ) : activeTabType === "chats" ? (
                       <>
-                        {/* Utente Segnalato */}
-                        <td className="px-4 py-3 max-w-[220px]">
-                          <div className="font-bold text-white text-sm line-clamp-1">
-                            {rep.nomeSegnalato || rep.titoloTarget || "Utente Segnalato"}
+                        {/* Persone nella Chat */}
+                        <td className="px-4 py-3 max-w-[240px]">
+                          <div className="space-y-1">
+                            {/* Utente Segnalato */}
+                            <div className="flex items-center space-x-1.5">
+                              <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-red-500/15 text-red-300 border border-red-500/30 shrink-0">
+                                Segnalato
+                              </span>
+                              <span
+                                className="font-bold text-white text-xs truncate"
+                                title={safeStr(rep.nomeSegnalato || rep.nomeControparte || rep.titoloTarget || "Utente Segnalato")}
+                              >
+                                {safeStr(rep.nomeSegnalato || rep.nomeControparte || rep.titoloTarget || "Utente Segnalato")}
+                              </span>
+                            </div>
+                            {(rep.idSegnalato || rep.idControparte) && (
+                              <span className="text-[10px] text-slate-500 font-mono block truncate pl-1">
+                                UID: {safeStr(rep.idSegnalato || rep.idControparte)}
+                              </span>
+                            )}
+
+                            {/* Interlocutore / Segnalatore */}
+                            <div className="pt-0.5 border-t border-slate-800/60 flex items-center space-x-1 text-[11px] text-slate-400">
+                              <span className="text-[9px] font-medium text-slate-500 shrink-0">Da:</span>
+                              <span
+                                className="text-slate-300 truncate font-medium"
+                                title={safeStr(rep.nomeSegnalatore || rep.nomeSegnalante || rep.emailSegnalante || rep.idSegnalatore || "Utente")}
+                              >
+                                {safeStr(rep.nomeSegnalatore || rep.nomeSegnalante || rep.emailSegnalante || rep.idSegnalatore || "Utente")}
+                              </span>
+                            </div>
                           </div>
-                          {rep.idSegnalato && (
-                            <span className="text-[10px] text-slate-400 font-mono block mt-0.5">
-                              UID: {rep.idSegnalato}
-                            </span>
-                          )}
                         </td>
 
                         {/* Stanza / ID Chat */}
                         <td className="px-4 py-3 max-w-[190px]">
                           <div className="flex items-center space-x-1.5 text-slate-300">
                             <MessageCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                            <span className="font-mono text-xs text-slate-200 truncate" title={rep.chatRoomId || rep.targetId}>
-                              {rep.chatRoomId || rep.targetId || "Chat"}
+                            <span
+                              className="font-mono text-xs text-slate-200 truncate"
+                              title={safeStr(rep.chatRoomId || rep.chatId || rep.targetId)}
+                            >
+                              {safeStr(rep.chatRoomId || rep.chatId || rep.targetId || "Chat")}
                             </span>
                           </div>
                           {rep.ultimiMessaggi && (
-                            <span className="text-[10px] text-slate-400 truncate block mt-0.5 pl-5">
-                              Ultimo msg: {rep.ultimiMessaggi}
+                            <span
+                              className="text-[10px] text-slate-400 truncate block mt-0.5 pl-5"
+                              title={safeStr(rep.ultimiMessaggi)}
+                            >
+                              Ultimo msg: {safeStr(rep.ultimiMessaggi)}
                             </span>
                           )}
                         </td>
@@ -640,13 +781,17 @@ export function ReportsCenter() {
                         <td className="px-4 py-3 max-w-[220px]">
                           <div
                             className="font-bold text-white text-sm line-clamp-1"
-                            title={rep.titoloTarget || rep.motivo}
+                            title={safeStr(rep.titoloTarget || rep.motivo)}
                           >
-                            {rep.titoloTarget || rep.motivo || (activeTabType === "suggerimenti" ? "Suggerimento Utente" : "Segnalazione Bug")}
+                            {safeStr(
+                              rep.titoloTarget ||
+                                rep.motivo ||
+                                (activeTabType === "suggerimenti" ? "Suggerimento Utente" : "Segnalazione Bug")
+                            )}
                           </div>
                           {rep.gravita && (
                             <span className="text-[10px] px-1.5 py-0.2 rounded font-semibold bg-red-500/10 text-red-400 border border-red-500/20 inline-block mt-0.5">
-                              Gravità: {rep.gravita}
+                              Gravità: {safeStr(rep.gravita)}
                             </span>
                           )}
                         </td>
@@ -655,13 +800,13 @@ export function ReportsCenter() {
                         <td className="px-4 py-3 max-w-[180px]">
                           <div className="flex items-center space-x-1.5 text-slate-300">
                             <Smartphone className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                            <span className="truncate" title={rep.dispositivo || "N/D"}>
-                              {rep.dispositivo || "Dispositivo N/D"}
+                            <span className="truncate" title={safeStr(rep.dispositivo || "N/D")}>
+                              {safeStr(rep.dispositivo || "Dispositivo N/D")}
                             </span>
                           </div>
                           {rep.versioneApp && (
                             <span className="text-[10px] text-slate-500 font-mono block mt-0.5 pl-5">
-                              App v{rep.versioneApp}
+                              App v{safeStr(rep.versioneApp)}
                             </span>
                           )}
                         </td>
@@ -673,7 +818,7 @@ export function ReportsCenter() {
                       {activeTabType === "events" || activeTabType === "chats" ? (
                         <div>
                           <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-[#1e293b] text-amber-300 border border-amber-500/20 inline-block mb-1">
-                            {rep.motivo || "Altro"}
+                            {safeStr(rep.motivo || "Altro")}
                           </span>
                           <p className="text-slate-300 text-xs line-clamp-2 italic" title={descriptionText}>
                             &ldquo;{descriptionText}&rdquo;
@@ -698,7 +843,7 @@ export function ReportsCenter() {
                       </div>
                     </td>
 
-                    {/* 6. Tag Stato: "DA RISOLVERE" (e non NUOVO) oppure "RISOLTO" */}
+                    {/* 6. Tag Stato */}
                     <td className="px-4 py-3 text-center whitespace-nowrap">
                       {isResolved ? (
                         <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 inline-flex items-center gap-1">
@@ -720,7 +865,7 @@ export function ReportsCenter() {
                         <button
                           onClick={() => setInspectingReport(rep)}
                           className="p-1.5 rounded-lg bg-[#141d2e] border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 transition"
-                          title="Vedi dettagli completi"
+                          title="Vedi dettagli completi e messaggi chat"
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
@@ -800,17 +945,19 @@ export function ReportsCenter() {
               <div className="font-semibold text-white">
                 {activeTabType === "events"
                   ? getEventTitle(resolvingReport)
-                  : activeTabType === "chats"
-                  ? (resolvingReport.nomeSegnalato ? `Chat con ${resolvingReport.nomeSegnalato}` : resolvingReport.titoloTarget || "Chat")
+                  : activeTabType === "chats" || isChatReport(resolvingReport)
+                  ? resolvingReport.nomeSegnalato || resolvingReport.nomeControparte
+                    ? `Chat con ${resolvingReport.nomeSegnalato || resolvingReport.nomeControparte}`
+                    : resolvingReport.titoloTarget || "Segnalazione Chat"
                   : resolvingReport.titoloTarget || resolvingReport.motivo}
               </div>
               <p className="text-slate-400">
                 <span className="text-amber-400 font-medium">Motivo: </span>
-                {resolvingReport.motivo || "Nessun motivo"}
+                {safeStr(resolvingReport.motivo || "Nessun motivo")}
               </p>
               {resolvingReport.descrizione && (
                 <p className="text-slate-300 italic pt-1">
-                  &ldquo;{resolvingReport.descrizione}&rdquo;
+                  &ldquo;{safeStr(resolvingReport.descrizione)}&rdquo;
                 </p>
               )}
             </div>
@@ -823,7 +970,7 @@ export function ReportsCenter() {
                 rows={3}
                 value={resolutionNote}
                 onChange={(e) => setResolutionNote(e.target.value)}
-                placeholder="Es. Evento modificato e verificato, oppure segnalazione infondata archiviata..."
+                placeholder="Es. Verificato contenuto chat, utente avvertito o segnalazione gestita secondo policy..."
                 className="w-full bg-[#141d2e] border border-slate-700 rounded-lg p-3 text-xs text-white focus:outline-none focus:border-emerald-500 placeholder-slate-500"
               />
             </div>
@@ -847,14 +994,26 @@ export function ReportsCenter() {
         </div>
       )}
 
-      {/* Modal: Dettagli Ispettore Segnalazione */}
+      {/* Modal: Dettagli Ispettore Segnalazione con Visualizzatore Chat */}
       {inspectingReport && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-          <div className="bg-[#0f172a] border border-[#1e293b] rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[85vh] overflow-y-auto">
+          <div
+            className={`bg-[#0f172a] border border-[#1e293b] rounded-2xl ${
+              activeTabType === "chats" || isChatReport(inspectingReport) ? "max-w-2xl" : "max-w-lg"
+            } w-full p-6 space-y-4 shadow-2xl max-h-[88vh] overflow-y-auto`}
+          >
             <div className="flex items-center justify-between border-b border-[#1e293b] pb-3">
               <div className="flex items-center gap-2">
-                <FileText className="w-5 h-5 text-amber-400" />
-                <h3 className="text-base font-bold text-white">Dettagli Segnalazione</h3>
+                {activeTabType === "chats" || isChatReport(inspectingReport) ? (
+                  <MessageCircle className="w-5 h-5 text-amber-400" />
+                ) : (
+                  <FileText className="w-5 h-5 text-amber-400" />
+                )}
+                <h3 className="text-base font-bold text-white">
+                  {activeTabType === "chats" || isChatReport(inspectingReport)
+                    ? "Dettagli Segnalazione Chat"
+                    : "Dettagli Segnalazione"}
+                </h3>
               </div>
               <button
                 onClick={() => setInspectingReport(null)}
@@ -864,7 +1023,7 @@ export function ReportsCenter() {
               </button>
             </div>
 
-            <div className="space-y-3 text-xs">
+            <div className="space-y-3.5 text-xs">
               {/* Stato Badge */}
               <div className="flex items-center justify-between">
                 <span className="text-slate-400 font-medium">Stato corrente:</span>
@@ -881,90 +1040,252 @@ export function ReportsCenter() {
                 )}
               </div>
 
-              {/* Data invio */}
-              <div className="flex items-center justify-between border-t border-slate-800 pt-2">
-                <span className="text-slate-400 font-medium">Inviata il:</span>
-                <span className="text-white font-mono">{formatDate(inspectingReport.timestamp)}</span>
+              {/* Data invio & ID Ticket */}
+              <div className="grid grid-cols-2 gap-2 border-t border-slate-800 pt-2 text-[11px]">
+                <div>
+                  <span className="text-slate-400 font-medium block">Inviata il:</span>
+                  <span className="text-white font-mono">{formatDate(inspectingReport.timestamp)}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-medium block">ID Ticket:</span>
+                  <span className="text-slate-300 font-mono text-[10px] truncate block" title={safeStr(inspectingReport.id)}>
+                    {safeStr(inspectingReport.id)}
+                  </span>
+                </div>
               </div>
 
-              {/* ID Ticket */}
-              <div className="flex items-center justify-between border-t border-slate-800 pt-2">
-                <span className="text-slate-400 font-medium">ID Ticket:</span>
-                <span className="text-slate-300 font-mono text-[11px]">{inspectingReport.id}</span>
-              </div>
-
-              {/* Evento, Chat o Oggetto */}
+              {/* Sezione Specifica: Eventi vs Chat vs Bug */}
               {activeTabType === "events" ? (
                 <>
                   <div className="border-t border-slate-800 pt-2">
                     <span className="text-slate-400 font-medium block mb-1">Evento target:</span>
-                    <div className="p-2 rounded-lg bg-[#141d2e] border border-slate-800 font-bold text-white">
+                    <div className="p-2.5 rounded-lg bg-[#141d2e] border border-slate-800 font-bold text-white">
                       {getEventTitle(inspectingReport)}
                     </div>
                   </div>
 
                   <div className="border-t border-slate-800 pt-2">
                     <span className="text-slate-400 font-medium block mb-1">Organizzatore responsabile:</span>
-                    <div className="p-2 rounded-lg bg-[#141d2e] border border-slate-800 text-slate-200">
+                    <div className="p-2.5 rounded-lg bg-[#141d2e] border border-slate-800 text-slate-200">
                       {getEventOrganizer(inspectingReport)}
                       {inspectingReport.idOrganizzatore && (
                         <span className="block text-[10px] text-slate-500 font-mono mt-0.5">
-                          UID Ente: {inspectingReport.idOrganizzatore}
+                          UID Ente: {safeStr(inspectingReport.idOrganizzatore)}
                         </span>
                       )}
                     </div>
                   </div>
                 </>
-              ) : activeTabType === "chats" ? (
+              ) : activeTabType === "chats" || isChatReport(inspectingReport) ? (
                 <>
-                  <div className="border-t border-slate-800 pt-2">
-                    <span className="text-slate-400 font-medium block mb-1">Utente Segnalato:</span>
-                    <div className="p-2 rounded-lg bg-[#141d2e] border border-slate-800 font-bold text-white">
-                      {inspectingReport.nomeSegnalato || inspectingReport.titoloTarget || "Utente Segnalato"}
-                      {inspectingReport.idSegnalato && (
-                        <span className="block text-[10px] text-slate-400 font-mono font-normal mt-0.5">
-                          UID: {inspectingReport.idSegnalato}
+                  {/* Persone nella Chat: Utente Segnalato & Segnalatore */}
+                  <div className="border-t border-slate-800 pt-2 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {/* Utente Segnalato */}
+                    <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/25">
+                      <div className="flex items-center space-x-1.5 mb-1">
+                        <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-red-500/20 text-red-300 border border-red-500/40">
+                          UTENTE SEGNALATO
+                        </span>
+                      </div>
+                      <div className="font-bold text-white text-sm truncate">
+                        {safeStr(
+                          inspectingReport.nomeSegnalato ||
+                            inspectingReport.nomeControparte ||
+                            inspectingReport.titoloTarget ||
+                            "Utente Segnalato"
+                        )}
+                      </div>
+                      {(inspectingReport.idSegnalato || inspectingReport.idControparte) && (
+                        <span className="text-[10px] text-slate-400 font-mono block mt-1 truncate">
+                          UID: {safeStr(inspectingReport.idSegnalato || inspectingReport.idControparte)}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Utente Segnalante */}
+                    <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/25">
+                      <div className="flex items-center space-x-1.5 mb-1">
+                        <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/40">
+                          UTENTE SEGNALANTE
+                        </span>
+                      </div>
+                      <div className="font-bold text-white text-sm truncate">
+                        {safeStr(
+                          inspectingReport.nomeSegnalatore ||
+                            inspectingReport.nomeSegnalante ||
+                            inspectingReport.emailSegnalante ||
+                            inspectingReport.segnalatoDa ||
+                            "Utente Segnalante"
+                        )}
+                      </div>
+                      {(inspectingReport.idSegnalatore ||
+                        inspectingReport.idSegnalante ||
+                        inspectingReport.segnalatoreUid) && (
+                        <span className="text-[10px] text-slate-400 font-mono block mt-1 truncate">
+                          UID:{" "}
+                          {safeStr(
+                            inspectingReport.idSegnalatore ||
+                              inspectingReport.idSegnalante ||
+                              inspectingReport.segnalatoreUid
+                          )}
                         </span>
                       )}
                     </div>
                   </div>
 
-                  {inspectingReport.chatRoomId && (
-                    <div className="border-t border-slate-800 pt-2 flex items-center justify-between">
-                      <span className="text-slate-400 font-medium">Stanza Chat:</span>
-                      <span className="text-slate-200 font-mono text-[11px]">{inspectingReport.chatRoomId}</span>
+                  {/* ID Stanza Chat con Copia */}
+                  {(inspectingReport.chatRoomId || inspectingReport.chatId || inspectingReport.targetId) && (
+                    <div className="border-t border-slate-800 pt-2 flex items-center justify-between p-2.5 rounded-lg bg-[#141d2e] border border-slate-800">
+                      <div>
+                        <span className="text-slate-400 text-[10px] block">ID Stanza Chat:</span>
+                        <span className="text-amber-400 font-mono text-xs select-all">
+                          {safeStr(inspectingReport.chatRoomId || inspectingReport.chatId || inspectingReport.targetId)}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() =>
+                          handleCopyChatId(
+                            safeStr(inspectingReport.chatRoomId || inspectingReport.chatId || inspectingReport.targetId)
+                          )
+                        }
+                        className="px-2 py-1 rounded bg-[#1e293b] hover:bg-slate-700 text-slate-300 text-[11px] flex items-center gap-1 transition"
+                        title="Copia ID Stanza"
+                      >
+                        {copiedChatId ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-400" />
+                            <span className="text-emerald-400">Copiato</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />
+                            <span>Copia ID</span>
+                          </>
+                        )}
+                      </button>
                     </div>
                   )}
 
-                  {inspectingReport.ultimiMessaggi && (
-                    <div className="border-t border-slate-800 pt-2">
-                      <span className="text-slate-400 font-medium block mb-1">Ultimo messaggio registrato:</span>
-                      <div className="p-2.5 rounded-lg bg-[#141d2e] border border-slate-800 text-slate-300 italic text-[11px]">
-                        &ldquo;{inspectingReport.ultimiMessaggi}&rdquo;
+                  {/* Cronologia Completa dei Messaggi Scambiati in Chat */}
+                  <div className="border-t border-slate-800 pt-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-1.5">
+                        <MessageSquare className="w-4 h-4 text-amber-400" />
+                        <span className="font-semibold text-white text-xs">
+                          Cronologia Conversazione Chat
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#141d2e] text-slate-300 border border-slate-700">
+                          {chatMessages.length} messaggi
+                        </span>
                       </div>
+                      <button
+                        onClick={reloadChat}
+                        disabled={isLoadingChat}
+                        className="p-1.5 rounded-lg bg-[#141d2e] border border-slate-700 text-slate-400 hover:text-white transition disabled:opacity-50"
+                        title="Ricarica messaggi dal database"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isLoadingChat ? "animate-spin text-amber-400" : ""}`} />
+                      </button>
                     </div>
-                  )}
+
+                    <div className="max-h-64 overflow-y-auto space-y-2 p-3 rounded-xl bg-[#0a0f1d] border border-slate-800 text-xs">
+                      {isLoadingChat ? (
+                        <div className="py-6 flex items-center justify-center space-x-2 text-slate-400">
+                          <RefreshCw className="w-4 h-4 animate-spin text-amber-400" />
+                          <span>Caricamento messaggi della chat in corso...</span>
+                        </div>
+                      ) : chatMessages.length > 0 ? (
+                        chatMessages.map((msg) => {
+                          const isReported =
+                            (inspectingReport.idSegnalato && msg.senderId === inspectingReport.idSegnalato) ||
+                            (inspectingReport.nomeSegnalato && msg.senderName === inspectingReport.nomeSegnalato);
+
+                          return (
+                            <div
+                              key={msg.id}
+                              className={`p-2.5 rounded-xl border text-xs space-y-1 ${
+                                isReported
+                                  ? "bg-red-950/20 border-red-500/30 text-red-100"
+                                  : "bg-[#141d2e] border-slate-800 text-slate-200"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between text-[10px]">
+                                <div className="flex items-center space-x-1.5">
+                                  <span
+                                    className={`font-bold ${
+                                      isReported ? "text-red-300" : "text-amber-400"
+                                    }`}
+                                  >
+                                    {safeStr(msg.senderName || msg.senderId || "Mittente")}
+                                  </span>
+                                  {isReported && (
+                                    <span className="px-1 py-0.2 rounded text-[8px] font-bold bg-red-500/20 text-red-300 border border-red-500/30">
+                                      Segnalato
+                                    </span>
+                                  )}
+                                  {msg.senderRole && (
+                                    <span className="text-[9px] text-slate-400 px-1 rounded bg-slate-800">
+                                      {msg.senderRole}
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-slate-400 font-mono">
+                                  {formatDate(msg.timestamp)}
+                                </span>
+                              </div>
+                              <p className="text-slate-200 whitespace-pre-wrap break-words leading-relaxed">
+                                {safeStr(msg.testo)}
+                              </p>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="py-4 text-center text-slate-400 space-y-1">
+                          <p className="text-xs font-semibold text-slate-300">
+                            Nessun messaggio presente nel database per questa stanza
+                          </p>
+                          <p className="text-[11px] text-slate-500">
+                            La chat potrebbe essere stata ripulita o non ancora attiva su RTDB Europe-West1.
+                          </p>
+                          {inspectingReport.ultimiMessaggi && (
+                            <div className="mt-2.5 p-2 rounded-lg bg-[#141d2e] border border-slate-700/60 text-left">
+                              <span className="text-[10px] text-amber-400 font-semibold block">
+                                Ultimo messaggio allegato alla segnalazione:
+                              </span>
+                              <p className="text-slate-300 italic text-[11px] mt-0.5">
+                                &ldquo;{safeStr(inspectingReport.ultimiMessaggi)}&rdquo;
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </>
               ) : (
                 <>
                   <div className="border-t border-slate-800 pt-2">
                     <span className="text-slate-400 font-medium block mb-1">Oggetto / Titolo:</span>
-                    <div className="p-2 rounded-lg bg-[#141d2e] border border-slate-800 font-bold text-white">
-                      {inspectingReport.titoloTarget || inspectingReport.motivo || "Bug Report"}
+                    <div className="p-2.5 rounded-lg bg-[#141d2e] border border-slate-800 font-bold text-white">
+                      {safeStr(
+                        inspectingReport.titoloTarget ||
+                          inspectingReport.motivo ||
+                          (activeTabType === "suggerimenti" ? "Suggerimento Utente" : "Bug Report")
+                      )}
                     </div>
                   </div>
 
                   {inspectingReport.dispositivo && (
                     <div className="border-t border-slate-800 pt-2 flex items-center justify-between">
                       <span className="text-slate-400 font-medium">Dispositivo utente:</span>
-                      <span className="text-slate-200 font-mono">{inspectingReport.dispositivo}</span>
+                      <span className="text-slate-200 font-mono">{safeStr(inspectingReport.dispositivo)}</span>
                     </div>
                   )}
 
                   {inspectingReport.versioneApp && (
                     <div className="border-t border-slate-800 pt-2 flex items-center justify-between">
                       <span className="text-slate-400 font-medium">Versione app:</span>
-                      <span className="text-slate-200 font-mono">v{inspectingReport.versioneApp}</span>
+                      <span className="text-slate-200 font-mono">v{safeStr(inspectingReport.versioneApp)}</span>
                     </div>
                   )}
                 </>
@@ -974,31 +1295,21 @@ export function ReportsCenter() {
               <div className="border-t border-slate-800 pt-2">
                 <span className="text-slate-400 font-medium block mb-1">Motivazione indicata:</span>
                 <span className="px-2.5 py-1 rounded bg-[#1e293b] text-amber-300 font-semibold border border-amber-500/20 inline-block">
-                  {inspectingReport.motivo || "Nessuna motivazione espressa"}
+                  {safeStr(inspectingReport.motivo || "Nessuna motivazione espressa")}
                 </span>
               </div>
 
               {/* Descrizione / Testo */}
               <div className="border-t border-slate-800 pt-2">
-                <span className="text-slate-400 font-medium block mb-1">Dettaglio descrittivo del problema:</span>
-                <div className="p-3 rounded-lg bg-[#141d2e] border border-slate-800 text-slate-200 whitespace-pre-wrap">
-                  {inspectingReport.descrizione ||
-                    inspectingReport.dettaglio ||
-                    inspectingReport.dettagli ||
-                    "Nessun commento aggiuntivo inserito dall'utente."}
+                <span className="text-slate-400 font-medium block mb-1">Dettaglio descrittivo inviato:</span>
+                <div className="p-3 rounded-lg bg-[#141d2e] border border-slate-800 text-slate-200 whitespace-pre-wrap leading-relaxed">
+                  {safeStr(
+                    inspectingReport.descrizione ||
+                      inspectingReport.dettaglio ||
+                      inspectingReport.dettagli ||
+                      "Nessun commento aggiuntivo inserito dall'utente."
+                  )}
                 </div>
-              </div>
-
-              {/* Segnalatore */}
-              <div className="border-t border-slate-800 pt-2 flex items-center justify-between">
-                <span className="text-slate-400 font-medium">Segnalato da:</span>
-                <span className="text-slate-200 font-mono">
-                  {inspectingReport.emailSegnalante ||
-                    inspectingReport.emailUtente ||
-                    inspectingReport.segnalatoDa ||
-                    inspectingReport.segnalatoreUid ||
-                    "Utente anonimo"}
-                </span>
               </div>
 
               {/* Note di Risoluzione (se presente) */}
@@ -1006,8 +1317,10 @@ export function ReportsCenter() {
                 <div className="border-t border-slate-800 pt-2">
                   <span className="text-emerald-400 font-medium block mb-1">Note di Risoluzione:</span>
                   <div className="p-3 rounded-lg bg-emerald-950/20 border border-emerald-500/30 text-emerald-300 text-xs">
-                    <p className="font-semibold">Gestito da: {inspectingReport.risoltoDa || "Amministratore"}</p>
-                    <p className="mt-1">{inspectingReport.risoluzioneNote}</p>
+                    <p className="font-semibold">
+                      Gestito da: {safeStr(inspectingReport.risoltoDa || "Amministratore")}
+                    </p>
+                    <p className="mt-1">{safeStr(inspectingReport.risoluzioneNote)}</p>
                     {inspectingReport.timestampRisoluzione && (
                       <span className="text-[10px] text-emerald-400/70 block mt-1">
                         Risolto il: {formatDate(inspectingReport.timestampRisoluzione)}
