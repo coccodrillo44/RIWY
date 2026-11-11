@@ -9,6 +9,7 @@ import {
   Building2,
   History,
   AlertTriangle,
+  MessageSquareWarning,
   MapPin,
   ToggleLeft,
   BellRing,
@@ -25,8 +26,18 @@ export function Sidebar() {
     return reports.filter((r) => !r.stato || r.stato === "nuovo" || r.stato === "in_lavorazione").length;
   }, [reports]);
 
+  const pendingChatReportsCount = useMemo(() => {
+    return reports.filter(
+      (r) =>
+        ((r.categoria || "").toLowerCase() === "chats" || (r.tipo || "").toLowerCase() === "chat") &&
+        (!r.stato || r.stato === "nuovo" || r.stato === "in_lavorazione")
+    ).length;
+  }, [reports]);
+
   const pendingOrgCount = useMemo(() => {
-    return organizerRequests.filter((o) => !o.stato || o.stato === "IN_ATTESA").length;
+    return organizerRequests.filter(
+      (o) => !o.stato || o.stato === "IN_ATTESA" || o.stato === "IN_ATTESA_VERIFICA_EMAIL"
+    ).length;
   }, [organizerRequests]);
 
   const pendingModerationCount = useMemo(() => {
@@ -49,6 +60,13 @@ export function Sidebar() {
       label: "Centro Segnalazioni",
       icon: AlertTriangle,
       badge: pendingReportsCount > 0 ? pendingReportsCount : null,
+      badgeColor: "bg-red-500",
+    },
+    {
+      id: "chat_reports",
+      label: "Segnalazioni Chat",
+      icon: MessageSquareWarning,
+      badge: pendingChatReportsCount > 0 ? pendingChatReportsCount : null,
       badgeColor: "bg-red-500",
     },
     { id: "audit", label: "Audit Log & Diff", icon: History },

@@ -127,7 +127,9 @@ export function OrganizersManager() {
   const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
 
   const pendingRequests = useMemo(() => {
-    return organizerRequests.filter((o) => !o.stato || o.stato === "IN_ATTESA");
+    return organizerRequests.filter(
+      (o) => !o.stato || o.stato === "IN_ATTESA" || o.stato === "IN_ATTESA_VERIFICA_EMAIL"
+    );
   }, [organizerRequests]);
 
   const handleConfirmReject = () => {
@@ -223,8 +225,16 @@ export function OrganizersManager() {
                         Richiesta da: {req.usernameRichiedente || req.emailRichiedente || req.uidUtente}
                       </p>
                     </div>
-                    <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full font-bold">
-                      IN ATTESA
+                    <span
+                      className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
+                        req.stato === "IN_ATTESA_VERIFICA_EMAIL"
+                          ? "bg-amber-500/20 text-amber-300 border-amber-500/30"
+                          : "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
+                      }`}
+                    >
+                      {req.stato === "IN_ATTESA_VERIFICA_EMAIL"
+                        ? "ATTESA VERIFICA EMAIL"
+                        : "EMAIL VERIFICATA"}
                     </span>
                   </div>
 
