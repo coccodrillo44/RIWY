@@ -23,13 +23,16 @@ export function Sidebar() {
   const { activeTab, setActiveTab, reports, organizerRequests, rejectedEvents, isLiveConnected, adminEmail, logout } = useAdmin();
 
   const pendingReportsCount = useMemo(() => {
-    return reports.filter((r) => !r.stato || r.stato === "nuovo" || r.stato === "in_lavorazione").length;
+    if (!Array.isArray(reports)) return 0;
+    return reports.filter((r) => r && (!r.stato || r.stato === "nuovo" || r.stato === "in_lavorazione")).length;
   }, [reports]);
 
   const pendingChatReportsCount = useMemo(() => {
+    if (!Array.isArray(reports)) return 0;
     return reports.filter(
       (r) =>
-        ((r.categoria || "").toLowerCase() === "chats" || (r.tipo || "").toLowerCase() === "chat") &&
+        r &&
+        (String(r.categoria || "").toLowerCase() === "chats" || String(r.tipo || "").toLowerCase() === "chat") &&
         (!r.stato || r.stato === "nuovo" || r.stato === "in_lavorazione")
     ).length;
   }, [reports]);
