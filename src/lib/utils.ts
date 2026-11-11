@@ -249,7 +249,7 @@ export function extractProvince(luogo: string | undefined, defaultProv?: string)
  */
 export function normalizeReportStatus(stato: string | undefined | null): "nuovo" | "in_lavorazione" | "risolto" | "rifiutato" {
   const s = (stato || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
-  if (!s || s === "nuovo" || s === "in_attesa" || s === "nuova") return "nuovo";
+  if (!s || s === "nuovo" || s === "in_attesa" || s === "nuova" || s === "aperto" || s === "aperta") return "nuovo";
   if (s === "in_lavorazione") return "in_lavorazione";
   if (s.startsWith("rifiut") || s === "respinta" || s === "respinto") return "rifiutato";
   return "risolto";

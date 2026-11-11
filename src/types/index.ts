@@ -124,7 +124,10 @@ export interface ReportItemDB {
   chatId?: string;
   idSegnalato?: string;
   nomeSegnalato?: string;
+  idControparte?: string;
+  nomeControparte?: string;
   idSegnalatore?: string;
+  idSegnalante?: string;
   nomeSegnalatore?: string;
   nomeSegnalante?: string;
   ultimiMessaggi?: any;
