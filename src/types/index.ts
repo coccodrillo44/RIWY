@@ -121,6 +121,7 @@ export interface ReportItemDB {
   organizzatore?: string;
   nomeOrganizzatore?: string;
   chatRoomId?: string;
+  chatId?: string;
   idSegnalato?: string;
   nomeSegnalato?: string;
   idSegnalatore?: string;
@@ -143,6 +144,16 @@ export interface ReportItemDB {
   risoltoDa?: string;
   risoluzioneNote?: string;
   timestampRisoluzione?: number;
+}
+
+export interface ChatMessageDB {
+  id: string;
+  chatId?: string;
+  senderId: string;
+  senderName?: string;
+  senderRole?: 'UTENTE' | 'ORGANIZZATORE' | 'ADMIN' | string;
+  testo: string;
+  timestamp: number;
 }
 
 export interface AuditLogDB {

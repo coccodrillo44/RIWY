@@ -23,6 +23,7 @@ import {
   BADGES_DISPONIBILI,
   BadgeDef,
   EventoRespintoModerazione,
+  ChatMessageDB,
 } from "@/types";
 import { auth, rtdb, storage, googleProvider } from "@/lib/firebase";
 import { processAndUploadEventImage } from "@/lib/imageUtils";
@@ -102,6 +103,7 @@ interface AdminContextType {
   deleteOwnEnte: () => Promise<boolean>;
   reinviaEmailVerificaEnte: (idEnte: string) => Promise<boolean>;
   addAuditLog: (log: Omit<AuditLogDB, "id" | "timestamp" | "operatore">) => Promise<void>;
+  fetchChatMessages: (chatId: string) => Promise<ChatMessageDB[]>;
   loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
   refreshData: () => void;
@@ -435,6 +437,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
                     organizzatore: nomeOrg,
                     nomeOrganizzatore: nomeOrg,
                     chatRoomId: r.chatRoomId || r.chatId || undefined,
+                    chatId: r.chatId || r.chatRoomId || undefined,
                     idSegnalato: r.idSegnalato || undefined,
                     nomeSegnalato: r.nomeSegnalato || undefined,
                     idSegnalatore: r.idSegnalatore || r.segnalatoreUid || undefined,
@@ -586,6 +589,32 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       }
     },
     [currentUser, adminEmail, notify]
+  );
+
+  const fetchChatMessages = useCallback(
+    async (chatId: string): Promise<ChatMessageDB[]> => {
+      if (!chatId) return [];
+      try {
+        const snap = await get(ref(rtdb, `chats/${chatId}/messages`));
+        if (!snap.exists()) return [];
+        const val = snap.val();
+        const msgs: ChatMessageDB[] = Object.entries(val).map(([k, v]: [string, any]) => ({
+          id: k,
+          chatId: v.chatId || chatId,
+          senderId: v.senderId || "",
+          senderName: v.senderName || "",
+          senderRole: v.senderRole || "UTENTE",
+          testo: v.testo || "",
+          timestamp: Number(v.timestamp || 0),
+        }));
+        msgs.sort((a, b) => a.timestamp - b.timestamp);
+        return msgs;
+      } catch (err) {
+        console.error("Errore recupero messaggi chat:", err);
+        return [];
+      }
+    },
+    []
   );
 
   // 1. Toggle Booster
@@ -1750,6 +1779,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         markRejectedEventAsExamined,
         deleteRejectedEvent,
         addAuditLog,
+        fetchChatMessages,
         loginWithGoogle,
         logout,
         refreshData,
