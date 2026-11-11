@@ -24,8 +24,27 @@ import {
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
+// Helper sicuro per convertire qualsiasi valore in stringa senza crashare
+function safeString(val: any): string {
+  if (val === null || val === undefined) return "";
+  if (typeof val === "string") return val;
+  if (typeof val === "number" || typeof val === "boolean") return String(val);
+  if (typeof val === "object") {
+    try {
+      return val.text || val.messaggio || val.nome || val.titolo || JSON.stringify(val);
+    } catch {
+      return "";
+    }
+  }
+  return String(val);
+}
+
 export function ChatReportsManager() {
-  const { reports, resolveReport, reopenReport, fetchChatMessages } = useAdmin();
+  const adminCtx = useAdmin();
+  const reports = adminCtx?.reports || [];
+  const resolveReport = adminCtx?.resolveReport;
+  const reopenReport = adminCtx?.reopenReport;
+  const fetchChatMessages = adminCtx?.fetchChatMessages;
 
   // Filters State
   const [searchTerm, setSearchTerm] = useState("");
@@ -42,11 +61,13 @@ export function ChatReportsManager() {
   const [chatMessages, setChatMessages] = useState<ChatMessageDB[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
 
-  // Filter only chat reports
+  // Filter only chat reports (in modo sicuro da null/undefined)
   const allChatReports = useMemo(() => {
+    if (!Array.isArray(reports)) return [];
     return reports.filter((r) => {
-      const cat = (r.categoria || "").toLowerCase();
-      const tipo = (r.tipo || "").toLowerCase();
+      if (!r) return false;
+      const cat = safeString(r.categoria).toLowerCase();
+      const tipo = safeString(r.tipo).toLowerCase();
       return cat === "chats" || tipo === "chat";
     });
   }, [reports]);
@@ -60,38 +81,74 @@ export function ChatReportsManager() {
     return allChatReports.filter((r) => r.stato === "risolto").length;
   }, [allChatReports]);
 
+  // Available unique reasons for filtering
+  const uniqueMotivi = useMemo(() => {
+    const set = new Set<string>();
+    allChatReports.forEach((r) => {
+      const mot = safeString(r?.motivo).trim();
+      if (mot && mot !== "Nessun motivo") {
+        set.add(mot);
+      }
+    });
+    return Array.from(set);
+  }, [allChatReports]);
+
   // Filtered reports
   const filteredReports = useMemo(() => {
     return allChatReports.filter((rep) => {
+      if (!rep) return false;
+
       // 1. Status Filter
       const isResolved = rep.stato === "risolto";
       if (selectedStatus === "da_risolvere" && isResolved) return false;
       if (selectedStatus === "risolto" && !isResolved) return false;
 
       // 2. Reason Filter
-      if (selectedMotivo !== "all" && rep.motivo !== selectedMotivo) {
+      const motivoStr = safeString(rep.motivo).trim();
+      if (selectedMotivo !== "all" && motivoStr !== selectedMotivo) {
         return false;
       }
 
       // 3. Date Filter
       if (selectedDate && rep.timestamp) {
-        const d = new Date(rep.timestamp);
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, "0");
-        const day = String(d.getDate()).padStart(2, "0");
-        const dateKey = `${y}-${m}-${day}`;
-        if (dateKey !== selectedDate) return false;
+        const num = typeof rep.timestamp === "number" ? rep.timestamp : Number(rep.timestamp);
+        if (!isNaN(num) && num > 0) {
+          const d = new Date(num);
+          if (!isNaN(d.getTime())) {
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, "0");
+            const day = String(d.getDate()).padStart(2, "0");
+            const dateKey = `${y}-${m}-${day}`;
+            if (dateKey !== selectedDate) return false;
+          }
+        }
       }
 
       // 4. Text Search
       if (searchTerm.trim()) {
         const q = searchTerm.toLowerCase();
-        const matchMotivo = (rep.motivo || "").toLowerCase().includes(q);
-        const matchDettagli = (rep.dettagli || rep.dettaglio || rep.descrizione || "").toLowerCase().includes(q);
-        const matchSegnalatore = (rep.nomeSegnalatore || rep.nomeSegnalante || rep.segnalatoreUid || rep.emailSegnalante || "").toLowerCase().includes(q);
-        const matchSegnalato = (rep.nomeSegnalato || rep.idSegnalato || "").toLowerCase().includes(q);
-        const matchChatId = (rep.chatId || rep.chatRoomId || rep.targetId || "").toLowerCase().includes(q);
-        const matchUltimi = (typeof rep.ultimiMessaggi === "string" ? rep.ultimiMessaggi : "").toLowerCase().includes(q);
+        const matchMotivo = safeString(rep.motivo).toLowerCase().includes(q);
+        const matchDettagli = (
+          safeString(rep.dettagli) ||
+          safeString(rep.dettaglio) ||
+          safeString(rep.descrizione)
+        ).toLowerCase().includes(q);
+        const matchSegnalatore = (
+          safeString(rep.nomeSegnalatore) ||
+          safeString(rep.nomeSegnalante) ||
+          safeString(rep.segnalatoreUid) ||
+          safeString(rep.emailSegnalante)
+        ).toLowerCase().includes(q);
+        const matchSegnalato = (
+          safeString(rep.nomeSegnalato) ||
+          safeString(rep.idSegnalato)
+        ).toLowerCase().includes(q);
+        const matchChatId = (
+          safeString(rep.chatId) ||
+          safeString(rep.chatRoomId) ||
+          safeString(rep.targetId)
+        ).toLowerCase().includes(q);
+        const matchUltimi = safeString(rep.ultimiMessaggi).toLowerCase().includes(q);
 
         return matchMotivo || matchDettagli || matchSegnalatore || matchSegnalato || matchChatId || matchUltimi;
       }
@@ -100,23 +157,16 @@ export function ChatReportsManager() {
     });
   }, [allChatReports, selectedStatus, selectedMotivo, selectedDate, searchTerm]);
 
-  // Available unique reasons for filtering
-  const uniqueMotivi = useMemo(() => {
-    const set = new Set<string>();
-    allChatReports.forEach((r) => {
-      if (r.motivo && r.motivo.trim()) set.add(r.motivo.trim());
-    });
-    return Array.from(set);
-  }, [allChatReports]);
-
   // Fetch chat messages when inspecting a report
   useEffect(() => {
-    if (!inspectingReport) {
+    if (!inspectingReport || !fetchChatMessages) {
       setChatMessages([]);
       return;
     }
 
-    const chatId = inspectingReport.chatId || inspectingReport.chatRoomId || inspectingReport.targetId;
+    const chatId = safeString(
+      inspectingReport.chatId || inspectingReport.chatRoomId || inspectingReport.targetId
+    );
     if (!chatId) {
       setChatMessages([]);
       return;
@@ -125,7 +175,7 @@ export function ChatReportsManager() {
     setIsLoadingMessages(true);
     fetchChatMessages(chatId)
       .then((msgs) => {
-        setChatMessages(msgs);
+        setChatMessages(Array.isArray(msgs) ? msgs : []);
       })
       .catch((err) => {
         console.error("Errore caricamento messaggi chat:", err);
@@ -137,8 +187,12 @@ export function ChatReportsManager() {
   }, [inspectingReport, fetchChatMessages]);
 
   const handleConfirmResolve = async () => {
-    if (!resolvingReport) return;
-    await resolveReport(resolvingReport.id, "chats", resolutionNote);
+    if (!resolvingReport || !resolveReport) return;
+    try {
+      await resolveReport(resolvingReport.id, "chats", resolutionNote);
+    } catch (e) {
+      console.error("Errore risoluzione segnalazione chat:", e);
+    }
     setResolvingReport(null);
     setResolutionNote("");
     if (inspectingReport && inspectingReport.id === resolvingReport.id) {
@@ -147,11 +201,16 @@ export function ChatReportsManager() {
   };
 
   const handleReopen = async (rep: ReportItemDB) => {
-    await reopenReport(rep.id, "chats");
+    if (!reopenReport) return;
+    try {
+      await reopenReport(rep.id, "chats");
+    } catch (e) {
+      console.error("Errore riapertura segnalazione chat:", e);
+    }
   };
 
-  const getMotivoBadgeColor = (motivo: string) => {
-    const m = motivo.toLowerCase();
+  const getMotivoBadgeColor = (motivo: any) => {
+    const m = safeString(motivo).toLowerCase();
     if (m.includes("molestie") || m.includes("insulti")) return "bg-red-500/10 text-red-400 border-red-500/30";
     if (m.includes("truffa") || m.includes("scam")) return "bg-purple-500/10 text-purple-400 border-purple-500/30";
     if (m.includes("offensiv") || m.includes("inappropriat")) return "bg-orange-500/10 text-orange-400 border-orange-500/30";
@@ -321,15 +380,19 @@ export function ChatReportsManager() {
           </thead>
           <tbody className="divide-y divide-[#1e293b]">
             {filteredReports.map((rep) => {
+              if (!rep) return null;
+              const repIdStr = safeString(rep.id);
               const isResolved = rep.stato === "risolto";
-              const segnalanteNome = rep.nomeSegnalatore || rep.nomeSegnalante || "Utente";
-              const segnalanteEmail = rep.emailSegnalante || rep.segnalatoreUid || "";
-              const segnalatoNome = rep.nomeSegnalato || "Utente Segnalato";
-              const segnalatoId = rep.idSegnalato || "";
-              const chatId = rep.chatId || rep.chatRoomId || rep.targetId;
+              const segnalanteNome = safeString(rep.nomeSegnalatore || rep.nomeSegnalante || "Utente");
+              const segnalanteEmail = safeString(rep.emailSegnalante || rep.segnalatoreUid || "");
+              const segnalatoNome = safeString(rep.nomeSegnalato || "Utente Segnalato");
+              const segnalatoId = safeString(rep.idSegnalato);
+              const chatId = safeString(rep.chatId || rep.chatRoomId || rep.targetId);
+              const dettagliText = safeString(rep.dettagli || rep.dettaglio || rep.descrizione);
+              const ultimiText = safeString(rep.ultimiMessaggi);
 
               return (
-                <tr key={rep.id} className="hover:bg-[#141d2e]/60 transition">
+                <tr key={repIdStr || Math.random().toString()} className="hover:bg-[#141d2e]/60 transition">
                   {/* Data */}
                   <td className="px-4 py-3.5 whitespace-nowrap">
                     <div className="font-semibold text-white">
@@ -337,7 +400,7 @@ export function ChatReportsManager() {
                     </div>
                     <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1">
                       <Clock className="w-3 h-3" />
-                      ID: {rep.id.slice(-6)}
+                      ID: {repIdStr.length > 6 ? repIdStr.slice(-6) : repIdStr || "N/D"}
                     </div>
                   </td>
 
@@ -367,7 +430,7 @@ export function ChatReportsManager() {
                           <span className="truncate max-w-[130px]">{segnalatoNome}</span>
                         </div>
                         <div className="text-[10px] text-red-400/80 font-medium">
-                          Segnalato {segnalatoId ? `(${segnalatoId.slice(-6)})` : ""}
+                          Segnalato {segnalatoId ? `(${segnalatoId.length > 6 ? segnalatoId.slice(-6) : segnalatoId})` : ""}
                         </div>
                       </div>
                     </div>
@@ -380,20 +443,20 @@ export function ChatReportsManager() {
                         rep.motivo
                       )}`}
                     >
-                      {rep.motivo || "Non specificato"}
+                      {safeString(rep.motivo) || "Non specificato"}
                     </span>
                   </td>
 
                   {/* Dettagli */}
                   <td className="px-4 py-3.5 max-w-xs">
                     <div className="text-xs text-slate-300 line-clamp-2">
-                      {rep.dettagli || rep.dettaglio || rep.descrizione || (
+                      {dettagliText || (
                         <span className="italic text-slate-500">Nessun dettaglio aggiuntivo</span>
                       )}
                     </div>
-                    {typeof rep.ultimiMessaggi === "string" && rep.ultimiMessaggi.trim() && (
+                    {ultimiText.trim() && (
                       <div className="text-[11px] text-amber-400/80 mt-1 line-clamp-1 italic">
-                        &quot;{rep.ultimiMessaggi}&quot;
+                        &quot;{ultimiText}&quot;
                       </div>
                     )}
                   </td>
@@ -503,13 +566,13 @@ export function ChatReportsManager() {
 
             <div className="p-3 rounded-xl bg-[#141d2e] border border-[#1e293b] text-xs space-y-1">
               <div className="text-slate-400">
-                Segnalante: <span className="text-white font-semibold">{resolvingReport.nomeSegnalatore || resolvingReport.nomeSegnalante || "Utente"}</span>
+                Segnalante: <span className="text-white font-semibold">{safeString(resolvingReport.nomeSegnalatore || resolvingReport.nomeSegnalante || "Utente")}</span>
               </div>
               <div className="text-slate-400">
-                Segnalato: <span className="text-red-400 font-semibold">{resolvingReport.nomeSegnalato || "Utente"}</span>
+                Segnalato: <span className="text-red-400 font-semibold">{safeString(resolvingReport.nomeSegnalato || "Utente")}</span>
               </div>
               <div className="text-slate-400">
-                Motivo: <span className="text-amber-400 font-semibold">{resolvingReport.motivo}</span>
+                Motivo: <span className="text-amber-400 font-semibold">{safeString(resolvingReport.motivo) || "Non specificato"}</span>
               </div>
             </div>
 
@@ -558,11 +621,11 @@ export function ChatReportsManager() {
                   <h3 className="font-bold text-white text-base flex items-center gap-2">
                     Cronologia Chat Segnalata
                     <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-red-500/20 text-red-300 border border-red-500/30">
-                      {inspectingReport.motivo || "Segnalazione"}
+                      {safeString(inspectingReport.motivo) || "Segnalazione"}
                     </span>
                   </h3>
                   <div className="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
-                    <span>Chat ID: <code className="text-amber-400 font-mono text-[11px]">{inspectingReport.chatId || inspectingReport.chatRoomId || inspectingReport.targetId || "N/D"}</code></span>
+                    <span>Chat ID: <code className="text-amber-400 font-mono text-[11px]">{safeString(inspectingReport.chatId || inspectingReport.chatRoomId || inspectingReport.targetId) || "N/D"}</code></span>
                     <span>•</span>
                     <span>{inspectingReport.timestamp ? formatDate(inspectingReport.timestamp, true) : ""}</span>
                   </div>
@@ -586,9 +649,9 @@ export function ChatReportsManager() {
                   </div>
                   <div>
                     <span className="text-slate-400">Segnalante:</span>{" "}
-                    <strong className="text-white">{inspectingReport.nomeSegnalatore || inspectingReport.nomeSegnalante || "Utente"}</strong>
-                    {inspectingReport.emailSegnalante && (
-                      <span className="text-slate-500 text-[11px] ml-1">({inspectingReport.emailSegnalante})</span>
+                    <strong className="text-white">{safeString(inspectingReport.nomeSegnalatore || inspectingReport.nomeSegnalante || "Utente")}</strong>
+                    {safeString(inspectingReport.emailSegnalante) && (
+                      <span className="text-slate-500 text-[11px] ml-1">({safeString(inspectingReport.emailSegnalante)})</span>
                     )}
                   </div>
                 </div>
@@ -602,18 +665,18 @@ export function ChatReportsManager() {
                   </div>
                   <div>
                     <span className="text-slate-400">Interlocutore Segnalato:</span>{" "}
-                    <strong className="text-red-400">{inspectingReport.nomeSegnalato || "Utente"}</strong>
-                    {inspectingReport.idSegnalato && (
-                      <span className="text-slate-500 text-[11px] ml-1">UID: {inspectingReport.idSegnalato}</span>
+                    <strong className="text-red-400">{safeString(inspectingReport.nomeSegnalato || "Utente")}</strong>
+                    {safeString(inspectingReport.idSegnalato) && (
+                      <span className="text-slate-500 text-[11px] ml-1">UID: {safeString(inspectingReport.idSegnalato)}</span>
                     )}
                   </div>
                 </div>
               </div>
 
               {/* Dettagli della segnalazione */}
-              {inspectingReport.dettagli && (
+              {safeString(inspectingReport.dettagli) && (
                 <div className="w-full text-slate-300 bg-[#141d2e] p-2.5 rounded-lg border border-[#1e293b]/70">
-                  <span className="font-semibold text-amber-400">Note del segnalante:</span> &quot;{inspectingReport.dettagli}&quot;
+                  <span className="font-semibold text-amber-400">Note del segnalante:</span> &quot;{safeString(inspectingReport.dettagli)}&quot;
                 </div>
               )}
             </div>
@@ -634,9 +697,12 @@ export function ChatReportsManager() {
                   </div>
 
                   {chatMessages.map((msg) => {
-                    const isFromReported = inspectingReport.idSegnalato && msg.senderId === inspectingReport.idSegnalato;
-                    const isFromReporter = (inspectingReport.idSegnalatore && msg.senderId === inspectingReport.idSegnalatore) ||
-                      (inspectingReport.segnalatoreUid && msg.senderId === inspectingReport.segnalatoreUid);
+                    const msgSenderId = safeString(msg.senderId);
+                    const repTargetId = safeString(inspectingReport.idSegnalato);
+                    const repAuthorId = safeString(inspectingReport.idSegnalatore || inspectingReport.segnalatoreUid);
+
+                    const isFromReported = repTargetId && msgSenderId === repTargetId;
+                    const isFromReporter = repAuthorId && msgSenderId === repAuthorId;
 
                     return (
                       <div
@@ -653,11 +719,11 @@ export function ChatReportsManager() {
                                 : "text-amber-300"
                             }`}
                           >
-                            {msg.senderName || (isFromReported ? inspectingReport.nomeSegnalato : msg.senderId)}
+                            {safeString(msg.senderName) || (isFromReported ? safeString(inspectingReport.nomeSegnalato) : msgSenderId || "Utente")}
                           </span>
 
                           <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-mono uppercase">
-                            {msg.senderRole || "UTENTE"}
+                            {safeString(msg.senderRole) || "UTENTE"}
                           </span>
 
                           {isFromReported && (
@@ -680,7 +746,7 @@ export function ChatReportsManager() {
                               : "bg-[#1e293b] border border-slate-700 text-slate-200 rounded-tl-none"
                           }`}
                         >
-                          <p className="whitespace-pre-wrap select-text">{msg.testo}</p>
+                          <p className="whitespace-pre-wrap select-text">{safeString(msg.testo)}</p>
                         </div>
                       </div>
                     );
@@ -699,13 +765,13 @@ export function ChatReportsManager() {
                     </p>
                   </div>
 
-                  {typeof inspectingReport.ultimiMessaggi === "string" && inspectingReport.ultimiMessaggi.trim() ? (
+                  {safeString(inspectingReport.ultimiMessaggi).trim() ? (
                     <div className="max-w-md mx-auto p-4 rounded-xl bg-[#141d2e] border border-amber-500/30 text-left">
                       <div className="text-[10px] text-amber-400 font-bold uppercase mb-1">
                         Ultimo messaggio archiviato al report:
                       </div>
                       <p className="text-xs text-white italic">
-                        &quot;{inspectingReport.ultimiMessaggi}&quot;
+                        &quot;{safeString(inspectingReport.ultimiMessaggi)}&quot;
                       </p>
                     </div>
                   ) : (
