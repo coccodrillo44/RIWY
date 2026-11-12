@@ -57,8 +57,8 @@ function safeStr(val: any): string {
 export function ReportsCenter() {
   const { reports, events, organizers, resolveReport, reopenReport, fetchChatMessages } = useAdmin();
 
-  // Tab: "events" (Segnalazioni Eventi) | "chats" (Segnalazioni Chat) | "bugs" (Segnalazioni Bug & Sistema) | "suggerimenti" (Suggerimenti & Idee)
-  const [activeTabType, setActiveTabType] = useState<"events" | "chats" | "bugs" | "suggerimenti">("events");
+  // Tab: "events" (Segnalazioni Eventi) | "organizers" (Segnalazioni Enti & Org) | "chats" (Segnalazioni Chat) | "bugs" (Segnalazioni Bug & Sistema) | "suggerimenti" (Suggerimenti & Idee)
+  const [activeTabType, setActiveTabType] = useState<"events" | "organizers" | "chats" | "bugs" | "suggerimenti">("events");
 
   // Filters State
   const [searchTerm, setSearchTerm] = useState("");
@@ -129,6 +129,21 @@ export function ReportsCenter() {
     );
   };
 
+  // Helper per verificare se un report è di tipo organizzatore / ente
+  const isOrganizerReport = (rep: ReportItemDB | null): boolean => {
+    if (!rep) return false;
+    const cat = String(rep.categoria || "").toLowerCase();
+    const tipo = String(rep.tipo || "").toLowerCase();
+    return (
+      cat === "organizzatori" ||
+      cat === "organizers" ||
+      cat === "enti" ||
+      cat === "ente" ||
+      tipo === "organizzatore" ||
+      tipo === "ente"
+    );
+  };
+
   // Caricamento cronologia messaggi quando si apre la modale di una chat
   useEffect(() => {
     if (!inspectingReport) {
@@ -177,9 +192,10 @@ export function ReportsCenter() {
     } catch (_) {}
   };
 
-  // Divisione delle segnalazioni per macro-categoria (Eventi vs Chat vs Bug vs Suggerimenti)
-  const { eventReports, chatReports, bugReports, suggerimentiReports } = useMemo(() => {
+  // Divisione delle segnalazioni per macro-categoria (Eventi vs Enti/Organizzatori vs Chat vs Bug vs Suggerimenti)
+  const { eventReports, organizerReports, chatReports, bugReports, suggerimentiReports } = useMemo(() => {
     const evList: ReportItemDB[] = [];
+    const orgList: ReportItemDB[] = [];
     const chatList: ReportItemDB[] = [];
     const bugList: ReportItemDB[] = [];
     const suggList: ReportItemDB[] = [];
@@ -202,19 +218,32 @@ export function ReportsCenter() {
         Boolean(r.chatRoomId || r.chatId)
       ) {
         chatList.push(r);
+      } else if (
+        cat === "organizzatori" ||
+        cat === "organizers" ||
+        cat === "enti" ||
+        cat === "ente" ||
+        tipo === "organizzatore" ||
+        tipo === "ente"
+      ) {
+        orgList.push(r);
       } else {
         // "events", "evento", default
         evList.push(r);
       }
     });
 
-    return { eventReports: evList, chatReports: chatList, bugReports: bugList, suggerimentiReports: suggList };
+    return { eventReports: evList, organizerReports: orgList, chatReports: chatList, bugReports: bugList, suggerimentiReports: suggList };
   }, [reports]);
 
   // Conteggi Da Risolvere
   const pendingEventsCount = useMemo(
     () => eventReports.filter((r) => r.stato !== "risolto").length,
     [eventReports]
+  );
+  const pendingOrganizersCount = useMemo(
+    () => organizerReports.filter((r) => r.stato !== "risolto").length,
+    [organizerReports]
   );
   const pendingChatsCount = useMemo(
     () => chatReports.filter((r) => r.stato !== "risolto").length,
@@ -233,6 +262,8 @@ export function ReportsCenter() {
   const currentTabReports =
     activeTabType === "events"
       ? eventReports
+      : activeTabType === "organizers"
+      ? organizerReports
       : activeTabType === "chats"
       ? chatReports
       : activeTabType === "bugs"
@@ -249,6 +280,12 @@ export function ReportsCenter() {
       set.add("Spam / Contenuto inappropriato");
       set.add("Luogo o data errati");
       set.add("Altro");
+    } else if (activeTabType === "organizers") {
+      set.add("Contenuti o immagini inappropriate");
+      set.add("Profilo falso o truffa");
+      set.add("Eventi inesistenti o ingannevoli");
+      set.add("Comportamento scorretto o molestie");
+      set.add("Altro motivo");
     } else if (activeTabType === "chats") {
       set.add("Spam o messaggi indesiderati");
       set.add("Molestie o minacce");
@@ -280,8 +317,8 @@ export function ReportsCenter() {
       if (selectedStatus === "da_risolvere" && isResolved) return false;
       if (selectedStatus === "risolto" && !isResolved) return false;
 
-      // 2. Filtro Motivazione (per Segnalazioni Eventi e Chat)
-      if ((activeTabType === "events" || activeTabType === "chats") && selectedMotivo !== "all") {
+      // 2. Filtro Motivazione (per Segnalazioni Eventi, Organizzatori e Chat)
+      if ((activeTabType === "events" || activeTabType === "organizers" || activeTabType === "chats") && selectedMotivo !== "all") {
         const motivoNorm = safeStr(rep.motivo).trim().toLowerCase();
         const selNorm = selectedMotivo.trim().toLowerCase();
         if (motivoNorm !== selNorm) return false;
@@ -306,6 +343,24 @@ export function ReportsCenter() {
           const matches =
             title.includes(term) ||
             org.includes(term) ||
+            reporter.includes(term) ||
+            reason.includes(term) ||
+            desc.includes(term) ||
+            safeStr(rep.id).toLowerCase().includes(term);
+
+          if (!matches) return false;
+        } else if (activeTabType === "organizers") {
+          const orgName = safeStr(rep.nomeOrganizzatore || rep.organizzatore || rep.titoloTarget).toLowerCase();
+          const orgId = safeStr(rep.idOrganizzatore || rep.targetId).toLowerCase();
+          const reporter = safeStr(
+            rep.nomeSegnalante || rep.nomeSegnalatore || rep.emailSegnalante || rep.segnalatoDa || rep.idSegnalante || rep.segnalatoreUid
+          ).toLowerCase();
+          const reason = safeStr(rep.motivo).toLowerCase();
+          const desc = safeStr(rep.descrizione || rep.dettaglio || rep.dettagli).toLowerCase();
+
+          const matches =
+            orgName.includes(term) ||
+            orgId.includes(term) ||
             reporter.includes(term) ||
             reason.includes(term) ||
             desc.includes(term) ||
@@ -356,7 +411,7 @@ export function ReportsCenter() {
   // Gestione Risoluzione
   const handleConfirmResolution = async () => {
     if (!resolvingReport) return;
-    const cat = resolvingReport.categoria || (activeTabType === "events" ? "events" : activeTabType === "chats" ? "chats" : "bugs");
+    const cat = resolvingReport.categoria || (activeTabType === "events" ? "events" : activeTabType === "organizers" ? "organizzatori" : activeTabType === "chats" ? "chats" : "bugs");
     await resolveReport(
       resolvingReport.id,
       cat,
@@ -369,7 +424,7 @@ export function ReportsCenter() {
 
   // Gestione Riapertura
   const handleReopen = async (rep: ReportItemDB) => {
-    const cat = rep.categoria || (activeTabType === "events" ? "events" : activeTabType === "chats" ? "chats" : "bugs");
+    const cat = rep.categoria || (activeTabType === "events" ? "events" : activeTabType === "organizers" ? "organizzatori" : activeTabType === "chats" ? "chats" : "bugs");
     await reopenReport(
       rep.id,
       cat,
@@ -388,7 +443,7 @@ export function ReportsCenter() {
   const hasActiveFilters =
     searchTerm.trim() !== "" ||
     selectedStatus !== "all" ||
-    ((activeTabType === "events" || activeTabType === "chats") && selectedMotivo !== "all") ||
+    ((activeTabType === "events" || activeTabType === "organizers" || activeTabType === "chats") && selectedMotivo !== "all") ||
     selectedDate !== "";
 
   return (
@@ -401,7 +456,7 @@ export function ReportsCenter() {
             Centro Segnalazioni & Moderazione
           </h1>
           <p className="text-sm text-slate-400">
-            Monitoraggio in tempo reale dei ticket: segnalazioni chat e messaggi, anomalie eventi, bug e suggerimenti.
+            Monitoraggio in tempo reale dei ticket: segnalazioni chat e messaggi, anomalie eventi, enti e organizzatori, bug e suggerimenti.
           </p>
         </div>
 
@@ -414,7 +469,7 @@ export function ReportsCenter() {
         </div>
       </div>
 
-      {/* Tabs: Divisione tra Segnalazioni Eventi, Chat, Bug e Suggerimenti */}
+      {/* Tabs: Divisione tra Segnalazioni Eventi, Organizzatori, Chat, Bug e Suggerimenti */}
       <div className="flex border-b border-[#1e293b] gap-2 overflow-x-auto">
         <button
           onClick={() => {
@@ -435,6 +490,29 @@ export function ReportsCenter() {
           {pendingEventsCount > 0 && (
             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
               {pendingEventsCount} da risolvere
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => {
+            setActiveTabType("organizers");
+            setSelectedMotivo("all");
+          }}
+          className={`pb-3.5 px-4 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
+            activeTabType === "organizers"
+              ? "border-amber-500 text-amber-400"
+              : "border-transparent text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          <Building2 className="w-4 h-4" />
+          Segnalazioni Enti & Org
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#141d2e] border border-slate-700 text-slate-300">
+            {organizerReports.length}
+          </span>
+          {pendingOrganizersCount > 0 && (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              {pendingOrganizersCount} da risolvere
             </span>
           )}
         </button>
@@ -519,6 +597,8 @@ export function ReportsCenter() {
             placeholder={
               activeTabType === "events"
                 ? "Cerca per nome evento, organizzatore o segnalatore..."
+                : activeTabType === "organizers"
+                ? "Cerca per organizzatore, ID, motivo o segnalatore..."
                 : activeTabType === "chats"
                 ? "Cerca per utente segnalato, stanza chat, motivo o segnalatore..."
                 : activeTabType === "bugs"
@@ -555,8 +635,8 @@ export function ReportsCenter() {
             </select>
           </div>
 
-          {/* Menu a tendina Motivazione - Per Segnalazioni Eventi e Chat */}
-          {(activeTabType === "events" || activeTabType === "chats") && (
+          {/* Menu a tendina Motivazione - Per Segnalazioni Eventi, Organizzatori e Chat */}
+          {(activeTabType === "events" || activeTabType === "organizers" || activeTabType === "chats") && (
             <div className="flex items-center space-x-1.5">
               <span className="text-slate-400 text-[11px] hidden md:inline">Motivo:</span>
               <select
@@ -625,6 +705,16 @@ export function ReportsCenter() {
                   <th className="px-4 py-3 text-center">Stato</th>
                   <th className="px-4 py-3 text-right">Azioni</th>
                 </tr>
+              ) : activeTabType === "organizers" ? (
+                <tr>
+                  <th className="px-4 py-3">Data</th>
+                  <th className="px-4 py-3">Organizzatore Segnalato</th>
+                  <th className="px-4 py-3">Tipo Target</th>
+                  <th className="px-4 py-3">Motivazione & Dettagli</th>
+                  <th className="px-4 py-3">Segnalatore</th>
+                  <th className="px-4 py-3 text-center">Stato</th>
+                  <th className="px-4 py-3 text-right">Azioni</th>
+                </tr>
               ) : activeTabType === "chats" ? (
                 <tr>
                   <th className="px-4 py-3">Data</th>
@@ -688,7 +778,7 @@ export function ReportsCenter() {
                       </span>
                     </td>
 
-                    {/* 2 & 3. Specifico per Tab Eventi, Chat o Bug/Suggerimenti */}
+                    {/* 2 & 3. Specifico per Tab Eventi, Organizzatori, Chat o Bug/Suggerimenti */}
                     {activeTabType === "events" ? (
                       <>
                         {/* Evento Segnalato */}
@@ -716,6 +806,35 @@ export function ReportsCenter() {
                               {safeStr(rep.idOrganizzatore)}
                             </span>
                           )}
+                        </td>
+                      </>
+                    ) : activeTabType === "organizers" ? (
+                      <>
+                        {/* Organizzatore Segnalato */}
+                        <td className="px-4 py-3 max-w-[220px]">
+                          <div className="flex items-center space-x-1.5">
+                            <Building2 className="w-4 h-4 text-amber-400 shrink-0" />
+                            <div className="truncate">
+                              <span
+                                className="font-bold text-white text-sm block truncate"
+                                title={safeStr(rep.nomeOrganizzatore || rep.organizzatore || rep.titoloTarget || "Organizzatore")}
+                              >
+                                {safeStr(rep.nomeOrganizzatore || rep.organizzatore || rep.titoloTarget || "Organizzatore")}
+                              </span>
+                              {rep.idOrganizzatore && (
+                                <span className="text-[10px] text-slate-500 font-mono block truncate">
+                                  ID: {safeStr(rep.idOrganizzatore)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Tipo Target */}
+                        <td className="px-4 py-3 max-w-[190px]">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 inline-block">
+                            Ente / Organizzatore
+                          </span>
                         </td>
                       </>
                     ) : activeTabType === "chats" ? (
@@ -815,7 +934,7 @@ export function ReportsCenter() {
 
                     {/* 4. Motivazione & Dettagli */}
                     <td className="px-4 py-3 max-w-[280px]">
-                      {activeTabType === "events" || activeTabType === "chats" ? (
+                      {activeTabType === "events" || activeTabType === "chats" || activeTabType === "organizers" ? (
                         <div>
                           <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-[#1e293b] text-amber-300 border border-amber-500/20 inline-block mb-1">
                             {safeStr(rep.motivo || "Altro")}
@@ -945,6 +1064,8 @@ export function ReportsCenter() {
               <div className="font-semibold text-white">
                 {activeTabType === "events"
                   ? getEventTitle(resolvingReport)
+                  : activeTabType === "organizers" || isOrganizerReport(resolvingReport)
+                  ? `Organizzatore: ${safeStr(resolvingReport.nomeOrganizzatore || resolvingReport.organizzatore || resolvingReport.titoloTarget || "Organizzatore")}`
                   : activeTabType === "chats" || isChatReport(resolvingReport)
                   ? resolvingReport.nomeSegnalato || resolvingReport.nomeControparte
                     ? `Chat con ${resolvingReport.nomeSegnalato || resolvingReport.nomeControparte}`
@@ -955,9 +1076,9 @@ export function ReportsCenter() {
                 <span className="text-amber-400 font-medium">Motivo: </span>
                 {safeStr(resolvingReport.motivo || "Nessun motivo")}
               </p>
-              {resolvingReport.descrizione && (
+              {(resolvingReport.descrizione || resolvingReport.dettaglio || resolvingReport.dettagli) && (
                 <p className="text-slate-300 italic pt-1">
-                  &ldquo;{safeStr(resolvingReport.descrizione)}&rdquo;
+                  &ldquo;{safeStr(resolvingReport.descrizione || resolvingReport.dettaglio || resolvingReport.dettagli)}&rdquo;
                 </p>
               )}
             </div>
@@ -1006,12 +1127,16 @@ export function ReportsCenter() {
               <div className="flex items-center gap-2">
                 {activeTabType === "chats" || isChatReport(inspectingReport) ? (
                   <MessageCircle className="w-5 h-5 text-amber-400" />
+                ) : activeTabType === "organizers" || isOrganizerReport(inspectingReport) ? (
+                  <Building2 className="w-5 h-5 text-amber-400" />
                 ) : (
                   <FileText className="w-5 h-5 text-amber-400" />
                 )}
                 <h3 className="text-base font-bold text-white">
                   {activeTabType === "chats" || isChatReport(inspectingReport)
                     ? "Dettagli Segnalazione Chat"
+                    : activeTabType === "organizers" || isOrganizerReport(inspectingReport)
+                    ? "Dettagli Segnalazione Organizzatore"
                     : "Dettagli Segnalazione"}
                 </h3>
               </div>
@@ -1054,7 +1179,7 @@ export function ReportsCenter() {
                 </div>
               </div>
 
-              {/* Sezione Specifica: Eventi vs Chat vs Bug */}
+              {/* Sezione Specifica: Eventi vs Organizzatori vs Chat vs Bug */}
               {activeTabType === "events" ? (
                 <>
                   <div className="border-t border-slate-800 pt-2">
@@ -1075,6 +1200,37 @@ export function ReportsCenter() {
                       )}
                     </div>
                   </div>
+                </>
+              ) : activeTabType === "organizers" || isOrganizerReport(inspectingReport) ? (
+                <>
+                  <div className="border-t border-slate-800 pt-2">
+                    <span className="text-slate-400 font-medium block mb-1">Organizzatore segnalato:</span>
+                    <div className="p-2.5 rounded-lg bg-[#141d2e] border border-slate-800 font-bold text-white flex items-center justify-between">
+                      <div className="flex items-center space-x-2 truncate">
+                        <Building2 className="w-4 h-4 text-amber-400 shrink-0" />
+                        <span className="truncate">
+                          {safeStr(
+                            inspectingReport.nomeOrganizzatore ||
+                              inspectingReport.organizzatore ||
+                              inspectingReport.titoloTarget ||
+                              "Organizzatore"
+                          )}
+                        </span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 shrink-0 ml-2">
+                        Ente / Profilo
+                      </span>
+                    </div>
+                  </div>
+
+                  {inspectingReport.idOrganizzatore && (
+                    <div className="border-t border-slate-800 pt-2 flex items-center justify-between">
+                      <span className="text-slate-400 font-medium">UID Organizzatore:</span>
+                      <span className="text-slate-200 font-mono text-xs select-all">
+                        {safeStr(inspectingReport.idOrganizzatore)}
+                      </span>
+                    </div>
+                  )}
                 </>
               ) : activeTabType === "chats" || isChatReport(inspectingReport) ? (
                 <>
@@ -1289,6 +1445,38 @@ export function ReportsCenter() {
                     </div>
                   )}
                 </>
+              )}
+
+              {/* Segnalatore (per Eventi, Organizzatori, Bug, Suggerimenti) */}
+              {!(activeTabType === "chats" || isChatReport(inspectingReport)) && (
+                <div className="border-t border-slate-800 pt-2 flex items-center justify-between">
+                  <span className="text-slate-400 font-medium">Inviata da:</span>
+                  <div className="flex items-center space-x-1.5 text-slate-200 font-medium truncate max-w-[70%]">
+                    <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span
+                      className="truncate text-xs font-mono"
+                      title={safeStr(
+                        inspectingReport.emailSegnalante ||
+                          inspectingReport.emailUtente ||
+                          inspectingReport.nomeSegnalatore ||
+                          inspectingReport.nomeSegnalante ||
+                          inspectingReport.segnalatoDa ||
+                          inspectingReport.idSegnalante ||
+                          "Utente"
+                      )}
+                    >
+                      {safeStr(
+                        inspectingReport.emailSegnalante ||
+                          inspectingReport.emailUtente ||
+                          inspectingReport.nomeSegnalatore ||
+                          inspectingReport.nomeSegnalante ||
+                          inspectingReport.segnalatoDa ||
+                          inspectingReport.idSegnalante ||
+                          "Utente"
+                      )}
+                    </span>
+                  </div>
+                </div>
               )}
 
               {/* Motivazione */}
