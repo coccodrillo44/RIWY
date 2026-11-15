@@ -296,3 +296,131 @@ export interface EventoRespintoModerazione {
   letto?: boolean;
   stato?: "RESPINTO" | "ESAMINATO" | string;
 }
+
+export interface CategoriaDB {
+  id: string;
+  nome: string;
+  nome_it?: string;
+  nome_en?: string;
+  nome_de?: string;
+  nome_es?: string;
+  nome_fr?: string;
+  icon_key?: string;
+  color_hex?: string;
+  ordine?: number;
+  attivo: boolean;
+  sottocategorie?: string[];
+}
+
+export const DEFAULT_CATEGORIE_LIST: CategoriaDB[] = [
+  {
+    id: "cibo_sagre",
+    nome: "Cibo & Sagre",
+    nome_it: "Cibo & Sagre",
+    nome_en: "Food & Festivals",
+    icon_key: "restaurant",
+    color_hex: "#EA580C",
+    ordine: 1,
+    attivo: true,
+    sottocategorie: ["Sagre", "Street Food", "Cibo & Sagre"],
+  },
+  {
+    id: "musica_feste",
+    nome: "Musica & Feste",
+    nome_it: "Musica & Feste",
+    nome_en: "Music & Parties",
+    icon_key: "music_note",
+    color_hex: "#8B5CF6",
+    ordine: 2,
+    attivo: true,
+    sottocategorie: ["Eventi Musicali", "Feste e Folklore", "Musica & Feste"],
+  },
+  {
+    id: "arte_cultura",
+    nome: "Arte & Cultura",
+    nome_it: "Arte & Cultura",
+    nome_en: "Art & Culture",
+    icon_key: "palette",
+    color_hex: "#0284C7",
+    ordine: 3,
+    attivo: true,
+    sottocategorie: ["Eventi Artistici", "Eventi in Biblioteca", "Eventi Religiosi", "Arte & Cultura"],
+  },
+  {
+    id: "sport_movimento",
+    nome: "Sport & Movimento",
+    nome_it: "Sport & Movimento",
+    nome_en: "Sports & Fitness",
+    icon_key: "sports_soccer",
+    color_hex: "#16A34A",
+    ordine: 4,
+    attivo: true,
+    sottocategorie: ["Eventi Sportivi", "Sport & Movimento"],
+  },
+  {
+    id: "famiglia_bambini",
+    nome: "Famiglia & Bambini",
+    nome_it: "Famiglia & Bambini",
+    nome_en: "Family & Kids",
+    icon_key: "child_care",
+    color_hex: "#EC4899",
+    ordine: 5,
+    attivo: true,
+    sottocategorie: ["Per Bambini", "Giostre", "Famiglia & Bambini"],
+  },
+  {
+    id: "fiere_mercati",
+    nome: "Fiere & Mercati",
+    nome_it: "Fiere & Mercati",
+    nome_en: "Fairs & Markets",
+    icon_key: "storefront",
+    color_hex: "#D97706",
+    ordine: 6,
+    attivo: true,
+    sottocategorie: ["Fiere e Mercati", "Fiere & Mercati"],
+  },
+  {
+    id: "nuove_aperture",
+    nome: "Nuove Aperture",
+    nome_it: "Nuove Aperture",
+    nome_en: "New Openings",
+    icon_key: "store",
+    color_hex: "#0D9488",
+    ordine: 7,
+    attivo: true,
+    sottocategorie: ["Nuove Aperture"],
+  },
+  {
+    id: "sconti_promozioni",
+    nome: "Sconti & Promozioni",
+    nome_it: "Sconti & Promozioni",
+    nome_en: "Discounts & Promos",
+    icon_key: "local_offer",
+    color_hex: "#E11D48",
+    ordine: 8,
+    attivo: true,
+    sottocategorie: ["Sconti", "Promozioni", "Sconti & Promozioni"],
+  },
+  {
+    id: "discoteche",
+    nome: "Discoteche",
+    nome_it: "Discoteche",
+    nome_en: "Clubs & Discos",
+    icon_key: "nightlife",
+    color_hex: "#7C3AED",
+    ordine: 9,
+    attivo: true,
+    sottocategorie: ["Club", "Discoteche"],
+  },
+  {
+    id: "salute_sociale",
+    nome: "Salute & Sociale",
+    nome_it: "Salute & Sociale",
+    nome_en: "Health & Social",
+    icon_key: "volunteer_activism",
+    color_hex: "#0D9488",
+    ordine: 10,
+    attivo: true,
+    sottocategorie: ["Salute", "Sociale", "Volontariato", "Salute & Sociale"],
+  },
+];

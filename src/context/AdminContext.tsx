@@ -24,6 +24,8 @@ import {
   BadgeDef,
   EventoRespintoModerazione,
   ChatMessageDB,
+  CategoriaDB,
+  DEFAULT_CATEGORIE_LIST,
 } from "@/types";
 import { auth, rtdb, storage, googleProvider } from "@/lib/firebase";
 import { processAndUploadEventImage } from "@/lib/imageUtils";
@@ -78,6 +80,7 @@ interface AdminContextType {
   analytics: AnalyticsDB;
   onlineUsersCount: number;
   rejectedEvents: EventoRespintoModerazione[];
+  categories: CategoriaDB[];
   // Actions
   toggleBooster: (eventId: string) => Promise<void>;
   toggleOscurato: (eventId: string, oscurato: boolean, motivo?: string) => Promise<void>;
@@ -102,6 +105,11 @@ interface AdminContextType {
   createOwnEnte: (data: CreateOwnEnteData) => Promise<boolean>;
   deleteOwnEnte: () => Promise<boolean>;
   reinviaEmailVerificaEnte: (idEnte: string) => Promise<boolean>;
+  addCategoria: (data: Partial<CategoriaDB>) => Promise<boolean>;
+  updateCategoria: (categoria: CategoriaDB) => Promise<boolean>;
+  toggleOscuraCategoria: (id: string, oscurata: boolean) => Promise<boolean>;
+  deleteCategoria: (id: string) => Promise<boolean>;
+  inizializzaCategorieDefault: () => Promise<boolean>;
   addAuditLog: (log: Omit<AuditLogDB, "id" | "timestamp" | "operatore">) => Promise<void>;
   fetchChatMessages: (chatId: string) => Promise<ChatMessageDB[]>;
   loginWithGoogle: () => Promise<void>;
@@ -211,6 +219,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     tabViews: {},
   });
   const [rejectedEvents, setRejectedEvents] = useState<EventoRespintoModerazione[]>([]);
+  const [categories, setCategories] = useState<CategoriaDB[]>([]);
 
   const notify = useCallback((type: ToastMessage["type"], text: string) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -594,6 +603,38 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
             }
           },
           fail("moderazione_respinti")
+        )
+      );
+
+      // Categorie listener (/categorie)
+      unsubs.push(
+        onValue(
+          ref(rtdb, "categorie"),
+          (snap) => {
+            if (snap.exists()) {
+              const val = snap.val() as Record<string, any>;
+              const list: CategoriaDB[] = Object.entries(val)
+                .map(([k, v]) => ({
+                  id: k,
+                  nome: v.nome || v.nome_it || k,
+                  nome_it: v.nome_it || v.nome || k,
+                  nome_en: v.nome_en || "",
+                  nome_de: v.nome_de || "",
+                  nome_es: v.nome_es || "",
+                  nome_fr: v.nome_fr || "",
+                  icon_key: v.icon_key || "tag",
+                  color_hex: v.color_hex || "#f59e0b",
+                  ordine: typeof v.ordine === "number" ? v.ordine : 99,
+                  attivo: v.attivo !== false,
+                  sottocategorie: Array.isArray(v.sottocategorie) ? v.sottocategorie : [],
+                }))
+                .sort((a, b) => (a.ordine ?? 99) - (b.ordine ?? 99));
+              setCategories(list);
+            } else {
+              setCategories([]);
+            }
+          },
+          fail("categorie")
         )
       );
     } catch (e) {
@@ -1748,6 +1789,183 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     [notify]
   );
 
+  // --- Gestione Categorie ---
+  const addCategoria = useCallback(
+    async (data: Partial<CategoriaDB>): Promise<boolean> => {
+      try {
+        const rawNome = (data.nome || "").trim();
+        if (!rawNome) {
+          notify("error", "Il nome della categoria è obbligatorio");
+          return false;
+        }
+
+        const id = (data.id || rawNome)
+          .toLowerCase()
+          .replace(/[&/\\#,+()$~%.'":*?<>{}]/g, "")
+          .trim()
+          .replace(/\s+/g, "_")
+          .substring(0, 40) || `cat_${Date.now()}`;
+
+        const newCat: CategoriaDB = clean({
+          id,
+          nome: rawNome,
+          nome_it: (data.nome_it || rawNome).trim(),
+          nome_en: (data.nome_en || "").trim(),
+          nome_de: (data.nome_de || "").trim(),
+          nome_es: (data.nome_es || "").trim(),
+          nome_fr: (data.nome_fr || "").trim(),
+          icon_key: (data.icon_key || "tag").trim(),
+          color_hex: (data.color_hex || "#f59e0b").trim(),
+          ordine: typeof data.ordine === "number" ? data.ordine : categories.length + 1,
+          attivo: data.attivo !== false,
+          sottocategorie: Array.isArray(data.sottocategorie)
+            ? data.sottocategorie.map((s) => s.trim()).filter(Boolean)
+            : [],
+        });
+
+        await set(ref(rtdb, `categorie/${id}`), newCat);
+
+        await addAuditLog({
+          azione: "CREAZIONE_CATEGORIA",
+          targetTipo: "sistema",
+          targetId: id,
+          dettagli: `Creata nuova categoria '${rawNome}' (attivo=${newCat.attivo})`,
+          diffPrima: null,
+          diffDopo: newCat,
+        });
+
+        notify("success", `Categoria '${rawNome}' creata con successo!`);
+        return true;
+      } catch (err: any) {
+        console.error("Errore aggiunta categoria:", err);
+        notify("error", `Errore creazione categoria: ${err.message}`);
+        return false;
+      }
+    },
+    [categories, addAuditLog, notify]
+  );
+
+  const updateCategoria = useCallback(
+    async (cat: CategoriaDB): Promise<boolean> => {
+      try {
+        if (!cat.id) return false;
+        const cleaned = clean({
+          ...cat,
+          nome: cat.nome.trim(),
+          nome_it: (cat.nome_it || cat.nome).trim(),
+          nome_en: (cat.nome_en || "").trim(),
+          sottocategorie: Array.isArray(cat.sottocategorie)
+            ? cat.sottocategorie.map((s) => s.trim()).filter(Boolean)
+            : [],
+        });
+
+        const catPrima = categories.find((c) => c.id === cat.id);
+        await update(ref(rtdb, `categorie/${cat.id}`), cleaned);
+
+        await addAuditLog({
+          azione: "MODIFICA_CATEGORIA",
+          targetTipo: "sistema",
+          targetId: cat.id,
+          dettagli: `Modificata categoria '${cat.nome}'`,
+          diffPrima: catPrima || null,
+          diffDopo: cleaned,
+        });
+
+        notify("success", `Categoria '${cat.nome}' aggiornata.`);
+        return true;
+      } catch (err: any) {
+        console.error("Errore aggiornamento categoria:", err);
+        notify("error", `Errore aggiornamento: ${err.message}`);
+        return false;
+      }
+    },
+    [categories, addAuditLog, notify]
+  );
+
+  const toggleOscuraCategoria = useCallback(
+    async (id: string, oscurata: boolean): Promise<boolean> => {
+      try {
+        const cat = categories.find((c) => c.id === id);
+        const nuovoStatoAttivo = !oscurata;
+        await update(ref(rtdb, `categorie/${id}`), { attivo: nuovoStatoAttivo });
+
+        await addAuditLog({
+          azione: oscurata ? "OSCURAMENTO_CATEGORIA" : "RIATTIVAZIONE_CATEGORIA",
+          targetTipo: "sistema",
+          targetId: id,
+          dettagli: oscurata
+            ? `Oscurata categoria '${cat?.nome || id}'. Gli eventi esistenti la mantengono ma non potrà più essere scelta per nuovi eventi.`
+            : `Riattivata categoria '${cat?.nome || id}'. Disponibile ora per la creazione di nuovi eventi.`,
+          diffPrima: { attivo: !nuovoStatoAttivo },
+          diffDopo: { attivo: nuovoStatoAttivo },
+        });
+
+        notify(
+          "success",
+          oscurata
+            ? `Categoria '${cat?.nome || id}' oscurata. Non sarà più selezionabile per nuovi eventi.`
+            : `Categoria '${cat?.nome || id}' riattivata con successo!`
+        );
+        return true;
+      } catch (err: any) {
+        console.error("Errore toggle oscuramento categoria:", err);
+        notify("error", `Errore: ${err.message}`);
+        return false;
+      }
+    },
+    [categories, addAuditLog, notify]
+  );
+
+  const deleteCategoria = useCallback(
+    async (id: string): Promise<boolean> => {
+      try {
+        const cat = categories.find((c) => c.id === id);
+        await remove(ref(rtdb, `categorie/${id}`));
+
+        await addAuditLog({
+          azione: "ELIMINAZIONE_CATEGORIA",
+          targetTipo: "sistema",
+          targetId: id,
+          dettagli: `Eliminata categoria '${cat?.nome || id}' dal database. Gli eventi esistenti la mantengono.`,
+          diffPrima: cat || null,
+          diffDopo: null,
+        });
+
+        notify("success", `Categoria '${cat?.nome || id}' eliminata dal catalogo.`);
+        return true;
+      } catch (err: any) {
+        console.error("Errore eliminazione categoria:", err);
+        notify("error", `Errore eliminazione: ${err.message}`);
+        return false;
+      }
+    },
+    [categories, addAuditLog, notify]
+  );
+
+  const inizializzaCategorieDefault = useCallback(async (): Promise<boolean> => {
+    try {
+      const updatesMap: Record<string, any> = {};
+      for (const c of DEFAULT_CATEGORIE_LIST) {
+        updatesMap[`categorie/${c.id}`] = c;
+      }
+      await update(ref(rtdb), updatesMap);
+      await addAuditLog({
+        azione: "INIZIALIZZAZIONE_CATEGORIE",
+        targetTipo: "sistema",
+        targetId: "categorie",
+        dettagli: "Inizializzate 10 categorie predefinite sul Realtime Database",
+        diffPrima: null,
+        diffDopo: DEFAULT_CATEGORIE_LIST,
+      });
+      notify("success", "10 Categorie predefinite inizializzate con successo!");
+      return true;
+    } catch (err: any) {
+      console.error("Errore inizializzazione categorie:", err);
+      notify("error", `Errore: ${err.message}`);
+      return false;
+    }
+  }, [addAuditLog, notify]);
+
   const loginWithGoogle = useCallback(async () => {
     try {
       await signInWithPopup(auth, googleProvider);
@@ -1820,6 +2038,12 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         createOwnEnte,
         deleteOwnEnte,
         reinviaEmailVerificaEnte,
+        categories,
+        addCategoria,
+        updateCategoria,
+        toggleOscuraCategoria,
+        deleteCategoria,
+        inizializzaCategorieDefault,
         rejectedEvents,
         markRejectedEventAsExamined,
         deleteRejectedEvent,

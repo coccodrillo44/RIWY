@@ -13,11 +13,23 @@ import {
   Zap,
   MapPin,
   Eye,
+  EyeOff,
   ArrowUpRight,
   Database,
   Radio,
   Smartphone,
+  Plus,
+  Trash2,
+  Edit2,
+  Tag,
+  Check,
+  X,
+  Search,
+  Sparkles,
+  AlertCircle,
+  FolderKanban,
 } from "lucide-react";
+import { CategoriaDB } from "@/types";
 import { getCategoryBadgeClass, formatDate, formatEventDate, isBoostAttivo, isEventoPassato, normalizeCategory } from "@/lib/utils";
 
 const CATEGORY_COLORS: Record<string, { fill: string; stroke: string; bg: string; text: string }> = {
@@ -45,7 +57,141 @@ export function DashboardCockpit() {
     setActiveTab,
     toggleBooster,
     navigateToEventsWithCategory,
+    categories,
+    addCategoria,
+    updateCategoria,
+    toggleOscuraCategoria,
+    deleteCategoria,
+    inizializzaCategorieDefault,
   } = useAdmin();
+
+  // Gestione Categorie State
+  const [categorySearch, setCategorySearch] = useState("");
+  const [categoryStatusFilter, setCategoryStatusFilter] = useState<"all" | "active" | "hidden">("all");
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<CategoriaDB | null>(null);
+  const [deletingCategory, setDeletingCategory] = useState<CategoriaDB | null>(null);
+
+  const [catForm, setCatForm] = useState({
+    nome: "",
+    nome_en: "",
+    color_hex: "#EA580C",
+    icon_key: "tag",
+    sottocategorieText: "",
+    ordine: 1,
+    attivo: true,
+  });
+
+  const PRESET_COLORS = [
+    "#EA580C",
+    "#8B5CF6",
+    "#0284C7",
+    "#16A34A",
+    "#EC4899",
+    "#D97706",
+    "#0D9488",
+    "#E11D48",
+    "#7C3AED",
+    "#3B82F6",
+    "#10B981",
+    "#64748B",
+  ];
+
+  const getEventCountForCategory = (catName: string) => {
+    const q = catName.trim().toLowerCase();
+    return events.filter(
+      (e) =>
+        e.categoria?.trim().toLowerCase() === q ||
+        normalizeCategory(e.categoria).trim().toLowerCase() === q
+    ).length;
+  };
+
+  const filteredCategories = useMemo(() => {
+    let list = categories;
+    if (categoryStatusFilter === "active") {
+      list = list.filter((c) => c.attivo);
+    } else if (categoryStatusFilter === "hidden") {
+      list = list.filter((c) => !c.attivo);
+    }
+    const q = categorySearch.trim().toLowerCase();
+    if (q) {
+      list = list.filter(
+        (c) =>
+          c.nome.toLowerCase().includes(q) ||
+          c.nome_en?.toLowerCase().includes(q) ||
+          c.sottocategorie?.some((s) => s.toLowerCase().includes(q))
+      );
+    }
+    return list;
+  }, [categories, categoryStatusFilter, categorySearch]);
+
+  const openNewCategoryModal = () => {
+    setEditingCategory(null);
+    setCatForm({
+      nome: "",
+      nome_en: "",
+      color_hex: "#3B82F6",
+      icon_key: "tag",
+      sottocategorieText: "",
+      ordine: (categories.length || 0) + 1,
+      attivo: true,
+    });
+    setShowCategoryModal(true);
+  };
+
+  const openEditCategoryModal = (cat: CategoriaDB) => {
+    setEditingCategory(cat);
+    setCatForm({
+      nome: cat.nome,
+      nome_en: cat.nome_en || "",
+      color_hex: cat.color_hex || "#EA580C",
+      icon_key: cat.icon_key || "tag",
+      sottocategorieText: (cat.sottocategorie || []).join(", "),
+      ordine: cat.ordine ?? 1,
+      attivo: cat.attivo,
+    });
+    setShowCategoryModal(true);
+  };
+
+  const handleSaveCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const sottos = catForm.sottocategorieText
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (editingCategory) {
+      await updateCategoria({
+        ...editingCategory,
+        nome: catForm.nome.trim(),
+        nome_it: catForm.nome.trim(),
+        nome_en: catForm.nome_en.trim(),
+        color_hex: catForm.color_hex,
+        icon_key: catForm.icon_key,
+        sottocategorie: sottos,
+        ordine: Number(catForm.ordine) || 1,
+        attivo: catForm.attivo,
+      });
+    } else {
+      await addCategoria({
+        nome: catForm.nome.trim(),
+        nome_it: catForm.nome.trim(),
+        nome_en: catForm.nome_en.trim(),
+        color_hex: catForm.color_hex,
+        icon_key: catForm.icon_key,
+        sottocategorie: sottos,
+        ordine: Number(catForm.ordine) || 1,
+        attivo: catForm.attivo,
+      });
+    }
+    setShowCategoryModal(false);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingCategory) return;
+    await deleteCategoria(deletingCategory.id);
+    setDeletingCategory(null);
+  };
 
   const onlineNow = useMemo(() => {
     const limit = Date.now() - 10 * 60 * 1000;
@@ -340,10 +486,8 @@ export function DashboardCockpit() {
         </div>
       </div>
 
-      {/* Middle Grid: Category Breakdown + Live Activity Stream */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column (2 spans): Category Distribution with Interactive Pie Chart */}
-        <div className="lg:col-span-2 p-5 rounded-xl bg-[#0f172a] border border-[#1e293b] space-y-4">
+      {/* 1. Card: Distribuzione Eventi per Categorie */}
+      <div className="p-5 rounded-xl bg-[#0f172a] border border-[#1e293b] space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-[#1e293b]">
             <h2 className="text-base font-bold text-white">
               Distribuzione Eventi per Categorie
@@ -540,10 +684,257 @@ export function DashboardCockpit() {
               Nessun evento disponibile per calcolare la distribuzione.
             </div>
           )}
+      </div>
+
+      {/* 2. Spazio Gestione Categorie Database (TRA la card distribuzione eventi e feed live attività) */}
+      <div className="p-5 rounded-xl bg-[#0f172a] border border-[#1e293b] space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#1e293b]">
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <Tag className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base font-bold text-white">
+                  Spazio Gestione Categorie Database
+                </h2>
+                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+                  {categories.length} totali
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  {categories.filter((c) => c.attivo).length} attive
+                </span>
+                {categories.some((c) => !c.attivo) && (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                    {categories.filter((c) => !c.attivo).length} oscurate
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Aggiungi nuove categorie, oscurale o eliminale dal database. Le categorie oscurate o eliminate non saranno più selezionabili per nuovi eventi, mentre gli eventi già pubblicati manterranno la loro categoria assegnata.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {categories.length === 0 && (
+              <button
+                onClick={inizializzaCategorieDefault}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/30 flex items-center gap-1.5 transition"
+              >
+                <Sparkles className="w-3.5 h-3.5" /> Inizializza 10 Predefinite
+              </button>
+            )}
+            <button
+              onClick={openNewCategoryModal}
+              className="px-3.5 py-2 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 flex items-center gap-1.5 shadow-md shadow-amber-500/10 transition"
+            >
+              <Plus className="w-4 h-4" /> Nuova Categoria
+            </button>
+          </div>
         </div>
 
-        {/* Right Column: Live Stream Audit Feed */}
-        <div className="p-5 rounded-xl bg-[#0f172a] border border-[#1e293b] flex flex-col justify-between space-y-4">
+        {/* Toolbar: Ricerca e Filtri Stato */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <input
+              type="text"
+              value={categorySearch}
+              onChange={(e) => setCategorySearch(e.target.value)}
+              placeholder="Cerca per nome o sottocategoria..."
+              className="w-full pl-9 pr-8 py-1.5 rounded-lg bg-[#141d2e] border border-[#1e293b] text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 transition"
+            />
+            {categorySearch && (
+              <button
+                onClick={() => setCategorySearch("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className="text-slate-400 text-[11px] mr-1">Filtra:</span>
+            <button
+              onClick={() => setCategoryStatusFilter("all")}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition ${
+                categoryStatusFilter === "all"
+                  ? "bg-amber-500 text-slate-950 font-bold"
+                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+              }`}
+            >
+              Tutte ({categories.length})
+            </button>
+            <button
+              onClick={() => setCategoryStatusFilter("active")}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition ${
+                categoryStatusFilter === "active"
+                  ? "bg-emerald-500 text-slate-950 font-bold"
+                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+              }`}
+            >
+              Attive ({categories.filter((c) => c.attivo).length})
+            </button>
+            <button
+              onClick={() => setCategoryStatusFilter("hidden")}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition ${
+                categoryStatusFilter === "hidden"
+                  ? "bg-amber-500 text-slate-950 font-bold"
+                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+              }`}
+            >
+              Oscurate ({categories.filter((c) => !c.attivo).length})
+            </button>
+          </div>
+        </div>
+
+        {/* Categories Grid */}
+        {filteredCategories.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
+            {filteredCategories.map((cat) => {
+              const evCount = getEventCountForCategory(cat.nome);
+              const isOscurata = !cat.attivo;
+              return (
+                <div
+                  key={cat.id}
+                  className={`p-4 rounded-xl border flex flex-col justify-between space-y-3 transition-all duration-200 ${
+                    isOscurata
+                      ? "bg-[#101726] border-amber-500/30 shadow-inner"
+                      : "bg-[#141d2e] border-[#1e293b] hover:border-slate-700 hover:shadow-lg hover:shadow-black/20"
+                  }`}
+                >
+                  <div className="space-y-2.5">
+                    {/* Top Row: Colore + Nome + Badge Stato */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center space-x-2.5 min-w-0">
+                        <div
+                          className="w-8 h-8 rounded-lg shrink-0 flex items-center justify-center font-bold text-white text-xs shadow-sm"
+                          style={{ backgroundColor: cat.color_hex || "#EA580C" }}
+                        >
+                          {cat.nome.slice(0, 2).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="font-bold text-sm text-white truncate" title={cat.nome}>
+                            {cat.nome}
+                          </h3>
+                          <p className="text-[11px] text-slate-400 truncate">
+                            {cat.nome_en || cat.id}
+                          </p>
+                        </div>
+                      </div>
+
+                      {isOscurata ? (
+                        <span className="shrink-0 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center gap-1">
+                          <EyeOff className="w-3 h-3" /> Oscurata
+                        </span>
+                      ) : (
+                        <span className="shrink-0 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          Attiva
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Conteggio eventi associati */}
+                    <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
+                      <button
+                        onClick={() => navigateToEventsWithCategory(cat.nome)}
+                        className="hover:text-amber-400 flex items-center gap-1 font-medium transition"
+                        title="Vedi eventi di questa categoria"
+                      >
+                        <span className="font-bold text-white">{evCount}</span> eventi associati
+                        <ArrowUpRight className="w-3 h-3 text-slate-500" />
+                      </button>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        #{cat.ordine ?? 1} • {cat.id}
+                      </span>
+                    </div>
+
+                    {/* Sottocategorie Tags */}
+                    {cat.sottocategorie && cat.sottocategorie.length > 0 && (
+                      <div className="flex flex-wrap gap-1 pt-1">
+                        {cat.sottocategorie.map((sub, sIdx) => (
+                          <span
+                            key={sIdx}
+                            className="px-1.5 py-0.5 rounded bg-[#1e293b]/70 text-[10px] text-slate-300"
+                          >
+                            {sub}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Actions Row */}
+                  <div className="flex items-center justify-between pt-3 border-t border-[#1e293b] gap-2">
+                    <button
+                      onClick={() => toggleOscuraCategoria(cat.id, cat.attivo)}
+                      className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 border transition ${
+                        isOscurata
+                          ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border-emerald-500/30"
+                          : "bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border-amber-500/30"
+                      }`}
+                      title={
+                        isOscurata
+                          ? "Riattiva per permettere di selezionarla nei nuovi eventi"
+                          : "Oscura: non sarà più selezionabile per nuovi eventi (quelli esistenti la mantengono)"
+                      }
+                    >
+                      {isOscurata ? (
+                        <>
+                          <Eye className="w-3.5 h-3.5" /> Riattiva
+                        </>
+                      ) : (
+                        <>
+                          <EyeOff className="w-3.5 h-3.5" /> Oscura
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      onClick={() => openEditCategoryModal(cat)}
+                      className="p-1.5 rounded-lg text-xs bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-700 transition"
+                      title="Modifica Categoria"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+
+                    <button
+                      onClick={() => setDeletingCategory(cat)}
+                      className="p-1.5 rounded-lg text-xs bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/30 transition"
+                      title="Elimina Categoria"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="p-8 text-center text-xs text-slate-500 border border-dashed border-slate-800 rounded-xl space-y-2">
+            <Tag className="w-6 h-6 mx-auto text-slate-600 mb-1" />
+            <p>Nessuna categoria corrisponde ai filtri di ricerca selezionati.</p>
+            {categorySearch && (
+              <button
+                onClick={() => {
+                  setCategorySearch("");
+                  setCategoryStatusFilter("all");
+                }}
+                className="text-amber-400 hover:underline text-xs"
+              >
+                Reimposta filtri
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 3. Grid: Feed Live Attività + Eventi con Booster Attivo */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left Column (1 span): Live Stream Audit Feed */}
+        <div className="lg:col-span-1 p-5 rounded-xl bg-[#0f172a] border border-[#1e293b] flex flex-col justify-between space-y-4">
           <div>
             <div className="flex items-center justify-between">
               <h2 className="text-base font-bold text-white flex items-center">
@@ -600,82 +991,302 @@ export function DashboardCockpit() {
             <span>Sincronizzazione bidirezionale attiva in tempo reale con Rook.</span>
           </div>
         </div>
+
+        {/* Right Column (2 spans): Featured Events Booster */}
+        <div className="lg:col-span-2 p-5 rounded-xl bg-[#0f172a] border border-[#1e293b] space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <div className="p-1.5 rounded-lg bg-amber-500/20 text-amber-400">
+                <Flame className="w-4 h-4 fill-current" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-white">
+                  Eventi con Booster Attivo ("⚡ In Evidenza")
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Visualizzati in cima alla home dell'app Rook nel carosello dorato
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setActiveTab("events")}
+              className="text-xs text-amber-400 hover:text-amber-300 font-semibold"
+            >
+              Gestisci Booster
+            </button>
+          </div>
+
+          {featuredEvents.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {featuredEvents.map((ev) => (
+                <div
+                  key={ev.id}
+                  className="p-4 rounded-xl bg-[#141d2e] border border-amber-500/30 flex flex-col justify-between space-y-3"
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${getCategoryBadgeClass(
+                          ev.categoria
+                        )}`}
+                      >
+                        {ev.categoria}
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500 text-slate-950 flex items-center">
+                        <Flame className="w-3 h-3 mr-0.5 fill-current" /> BOOST
+                      </span>
+                    </div>
+                    <h3 className="mt-2 font-bold text-sm text-white line-clamp-1">
+                      {ev.titolo}
+                    </h3>
+                    <p className="text-xs text-slate-400 flex items-center mt-1">
+                      <MapPin className="w-3.5 h-3.5 mr-1 text-slate-500" />
+                      {ev.luogo || "Toscana"} — {formatEventDate(ev)}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-[#1e293b] text-xs">
+                    <span className="text-slate-400 flex items-center">
+                      <Eye className="w-3.5 h-3.5 mr-1 text-slate-500" />
+                      {ev.numeroRecensioni || 0} recensioni
+                    </span>
+                    <button
+                      onClick={() => toggleBooster(ev.id)}
+                      className="px-2 py-1 rounded text-[11px] font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/30 transition"
+                    >
+                      Disattiva
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-8 text-center text-xs text-slate-500 border border-dashed border-slate-800 rounded-xl">
+              Nessun evento ha attualmente il Booster dorato attivo. Puoi abilitarlo dalla scheda "Gestione Eventi".
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Featured Events (Booster) Highlight Row */}
-      <div className="p-5 rounded-xl bg-[#0f172a] border border-[#1e293b] space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <div className="p-1.5 rounded-lg bg-amber-500/20 text-amber-400">
-              <Flame className="w-4 h-4 fill-current" />
-            </div>
-            <div>
-              <h2 className="text-base font-bold text-white">
-                Eventi con Booster Attivo ("⚡ In Evidenza")
-              </h2>
-              <p className="text-xs text-slate-400">
-                Visualizzati in cima alla home dell'app Rook nel carosello dorato
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => setActiveTab("events")}
-            className="text-xs text-amber-400 hover:text-amber-300 font-semibold"
-          >
-            Gestisci Booster
-          </button>
-        </div>
-
-        {featuredEvents.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {featuredEvents.map((ev) => (
-              <div
-                key={ev.id}
-                className="p-4 rounded-xl bg-[#141d2e] border border-amber-500/30 flex flex-col justify-between space-y-3"
-              >
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span
-                      className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${getCategoryBadgeClass(
-                        ev.categoria
-                      )}`}
-                    >
-                      {ev.categoria}
-                    </span>
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500 text-slate-950 flex items-center">
-                      <Flame className="w-3 h-3 mr-0.5 fill-current" /> BOOST
-                    </span>
-                  </div>
-                  <h3 className="mt-2 font-bold text-sm text-white line-clamp-1">
-                    {ev.titolo}
-                  </h3>
-                  <p className="text-xs text-slate-400 flex items-center mt-1">
-                    <MapPin className="w-3.5 h-3.5 mr-1 text-slate-500" />
-                    {ev.luogo || "Toscana"} — {formatEventDate(ev)}
-                  </p>
+      {/* Modal Nuova / Modifica Categoria */}
+      {showCategoryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#0f172a] border border-[#1e293b] rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[#1e293b]">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400">
+                  <Tag className="w-4 h-4" />
                 </div>
+                <h3 className="text-base font-bold text-white">
+                  {editingCategory ? "Modifica Categoria" : "Nuova Categoria"}
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowCategoryModal(false)}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
 
-                <div className="flex items-center justify-between pt-2 border-t border-[#1e293b] text-xs">
-                  <span className="text-slate-400 flex items-center">
-                    <Eye className="w-3.5 h-3.5 mr-1 text-slate-500" />
-                    {ev.numeroRecensioni || 0} recensioni
-                  </span>
-                  <button
-                    onClick={() => toggleBooster(ev.id)}
-                    className="px-2 py-1 rounded text-[11px] font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/30 transition"
+            <form onSubmit={handleSaveCategory} className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">
+                  Nome Categoria *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={catForm.nome}
+                  onChange={(e) => setCatForm({ ...catForm, nome: e.target.value })}
+                  placeholder="es. Cibo & Sagre, Tecnologia & Gaming..."
+                  className="w-full px-3 py-2 rounded-lg bg-[#141d2e] border border-slate-700 text-white text-xs focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">
+                  Nome Inglese (opzionale)
+                </label>
+                <input
+                  type="text"
+                  value={catForm.nome_en}
+                  onChange={(e) => setCatForm({ ...catForm, nome_en: e.target.value })}
+                  placeholder="es. Food & Festivals, Tech & Gaming..."
+                  className="w-full px-3 py-2 rounded-lg bg-[#141d2e] border border-slate-700 text-white text-xs focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              {/* Colore Hex & Presets */}
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1.5">
+                  Colore Identificativo
+                </label>
+                <div className="flex items-center gap-2 mb-2">
+                  <input
+                    type="color"
+                    value={catForm.color_hex}
+                    onChange={(e) => setCatForm({ ...catForm, color_hex: e.target.value })}
+                    className="w-8 h-8 rounded border border-slate-700 bg-transparent cursor-pointer"
+                  />
+                  <input
+                    type="text"
+                    value={catForm.color_hex}
+                    onChange={(e) => setCatForm({ ...catForm, color_hex: e.target.value })}
+                    className="w-28 px-2.5 py-1.5 rounded-lg bg-[#141d2e] border border-slate-700 text-white text-xs font-mono"
+                  />
+                  <span
+                    className="px-2 py-1 rounded text-[10px] font-bold text-white shadow"
+                    style={{ backgroundColor: catForm.color_hex }}
                   >
-                    Disattiva
-                  </button>
+                    Anteprima
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {PRESET_COLORS.map((c) => (
+                    <button
+                      type="button"
+                      key={c}
+                      onClick={() => setCatForm({ ...catForm, color_hex: c })}
+                      className={`w-5 h-5 rounded-md border transition ${
+                        catForm.color_hex.toLowerCase() === c.toLowerCase()
+                          ? "scale-110 border-white ring-2 ring-amber-400"
+                          : "border-transparent opacity-80 hover:opacity-100"
+                      }`}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
                 </div>
               </div>
-            ))}
+
+              {/* Sottocategorie */}
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">
+                  Sottocategorie (separate da virgola)
+                </label>
+                <input
+                  type="text"
+                  value={catForm.sottocategorieText}
+                  onChange={(e) => setCatForm({ ...catForm, sottocategorieText: e.target.value })}
+                  placeholder="es. Sagre, Street Food, Degustazioni..."
+                  className="w-full px-3 py-2 rounded-lg bg-[#141d2e] border border-slate-700 text-white text-xs focus:outline-none focus:border-amber-500"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Verranno usate per il matching automatico degli eventi e per i filtri di ricerca nell'app Rook.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">
+                    Ordine di Visualizzazione
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={99}
+                    value={catForm.ordine}
+                    onChange={(e) => setCatForm({ ...catForm, ordine: Number(e.target.value) || 1 })}
+                    className="w-full px-3 py-2 rounded-lg bg-[#141d2e] border border-slate-700 text-white text-xs focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">
+                    Icona Chiave (key)
+                  </label>
+                  <input
+                    type="text"
+                    value={catForm.icon_key}
+                    onChange={(e) => setCatForm({ ...catForm, icon_key: e.target.value })}
+                    placeholder="es. restaurant, tag, music..."
+                    className="w-full px-3 py-2 rounded-lg bg-[#141d2e] border border-slate-700 text-white text-xs focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+              </div>
+
+              {/* Switch Attivo */}
+              <div className="flex items-center justify-between p-3 rounded-lg bg-[#141d2e] border border-[#1e293b]">
+                <div>
+                  <span className="text-xs font-semibold text-white block">
+                    Categoria Attiva
+                  </span>
+                  <span className="text-[10px] text-slate-400 block">
+                    Se disattivata (oscurata), non apparirà nei moduli di creazione evento ma gli eventi esistenti la manterranno.
+                  </span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={catForm.attivo}
+                  onChange={(e) => setCatForm({ ...catForm, attivo: e.target.checked })}
+                  className="w-4 h-4 rounded text-amber-500 focus:ring-amber-400 bg-slate-800 border-slate-600"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#1e293b]">
+                <button
+                  type="button"
+                  onClick={() => setShowCategoryModal(false)}
+                  className="px-3.5 py-2 rounded-lg text-xs font-medium text-slate-300 hover:bg-slate-800 transition"
+                >
+                  Annulla
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 transition"
+                >
+                  {editingCategory ? "Aggiorna Categoria" : "Crea Categoria"}
+                </button>
+              </div>
+            </form>
           </div>
-        ) : (
-          <div className="p-8 text-center text-xs text-slate-500 border border-dashed border-slate-800 rounded-xl">
-            Nessun evento ha attualmente il Booster dorato attivo. Puoi abilitarlo dalla scheda "Gestione Eventi".
+        </div>
+      )}
+
+      {/* Modal Conferma Eliminazione Categoria */}
+      {deletingCategory && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#0f172a] border border-[#1e293b] rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-red-400">
+              <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/20">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">
+                  Eliminare la categoria?
+                </h3>
+                <p className="text-xs text-slate-400">
+                  {deletingCategory.nome}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-200 space-y-2">
+              <p>
+                Sei sicuro di voler eliminare definitivamente <strong>"{deletingCategory.nome}"</strong> dal database?
+              </p>
+              <p className="text-slate-300">
+                Gli eventi esistenti (<strong>{getEventCountForCategory(deletingCategory.nome)}</strong> associati) <strong>manterranno comunque la categoria</strong>, ma questa categoria non sarà più disponibile per la creazione di nuovi eventi né sull'app Rook né su RIWY.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                onClick={() => setDeletingCategory(null)}
+                className="px-3.5 py-2 rounded-lg text-xs font-medium text-slate-300 hover:bg-slate-800 transition"
+              >
+                Annulla
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 rounded-lg text-xs font-bold bg-red-600 hover:bg-red-500 text-white shadow-md shadow-red-600/20 transition"
+              >
+                Elimina Categoria
+              </button>
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

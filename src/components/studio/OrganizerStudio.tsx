@@ -669,6 +669,7 @@ export function OrganizerStudio() {
     reinviaEmailVerificaEnte,
     toggleOscurato,
     deleteEvent,
+    categories,
   } = useAdmin();
 
   const myUid = currentUser?.uid || "";
@@ -761,6 +762,15 @@ export function OrganizerStudio() {
 
   const hasCover = Boolean(cover || (draft?.immagineCopertina && draft.immagineCopertina.trim()));
   const hasProgramma = Boolean(programma || (draft?.immagineMenu && draft.immagineMenu.trim()));
+
+  const availableCategories = useMemo(() => {
+    const active = categories.filter((c) => c.attivo).map((c) => c.nome);
+    const fallback = active.length > 0 ? active : CATEGORIES;
+    if (draft?.categoria && !fallback.includes(draft.categoria)) {
+      return [draft.categoria, ...fallback];
+    }
+    return fallback;
+  }, [categories, draft?.categoria]);
 
   // Autocompletamento Indirizzo Evento (OpenStreetMap / Nominatim)
   const [addressSearch, setAddressSearch] = useState("");
@@ -1561,8 +1571,8 @@ export function OrganizerStudio() {
                   value={draft.categoria}
                   onChange={(e) => set({ categoria: e.target.value })}
                 >
-                  {CATEGORIES.map((c) => (
-                    <option key={c}>{c}</option>
+                  {availableCategories.map((c) => (
+                    <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
               </div>

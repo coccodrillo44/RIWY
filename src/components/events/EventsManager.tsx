@@ -28,6 +28,7 @@ export function EventsManager() {
     isLoading,
     eventCategoryFilter,
     setEventCategoryFilter,
+    categories: dynamicCategories,
   } = useAdmin();
 
   const [searchTerm, setSearchTerm] = useState("");
@@ -42,16 +43,30 @@ export function EventsManager() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteReason, setDeleteReason] = useState("");
 
-  const categories = [
-    "Cibo & Sagre",
-    "Musica & Feste",
-    "Arte & Cultura",
-    "Sport & Movimento",
-    "Famiglia & Bambini",
-    "Fiere & Mercati",
-    "Nuove Aperture",
-    "Sconti & Promozioni",
-  ];
+  const categories = useMemo(() => {
+    const list = dynamicCategories.map((c) => c.nome);
+    return list.length > 0 ? list : [
+      "Cibo & Sagre",
+      "Musica & Feste",
+      "Arte & Cultura",
+      "Sport & Movimento",
+      "Famiglia & Bambini",
+      "Fiere & Mercati",
+      "Nuove Aperture",
+      "Sconti & Promozioni",
+      "Discoteche",
+      "Salute & Sociale",
+    ];
+  }, [dynamicCategories]);
+
+  const activeCategoriesForEdit = useMemo(() => {
+    const active = dynamicCategories.filter((c) => c.attivo).map((c) => c.nome);
+    const base = active.length > 0 ? active : categories;
+    if (editingEvent?.categoria && !base.includes(editingEvent.categoria)) {
+      return [editingEvent.categoria, ...base];
+    }
+    return base;
+  }, [dynamicCategories, categories, editingEvent?.categoria]);
 
   const provinces = ["FI", "PI", "LU", "SI", "AR", "LI", "MS", "GR", "PO", "PT"];
 
@@ -412,7 +427,7 @@ export function EventsManager() {
                     onChange={(e) => setEditingEvent({ ...editingEvent, categoria: e.target.value })}
                     className="w-full bg-[#141d2e] border border-slate-700 rounded-lg p-2 text-white focus:outline-none focus:border-amber-500"
                   >
-                    {categories.map((c) => (
+                    {activeCategoriesForEdit.map((c) => (
                       <option key={c} value={c}>{c}</option>
                     ))}
                   </select>
