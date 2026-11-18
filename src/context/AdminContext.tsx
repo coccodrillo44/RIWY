@@ -27,7 +27,16 @@ import {
   CategoriaDB,
   DEFAULT_CATEGORIE_LIST,
 } from "@/types";
-import { auth, rtdb, storage, googleProvider } from "@/lib/firebase";
+import {
+  auth,
+  devAuth,
+  googleProvider,
+  prodRtdb,
+  devRtdb,
+  prodStorage,
+  devStorage,
+  FirebaseEnv,
+} from "@/lib/firebase";
 import { processAndUploadEventImage } from "@/lib/imageUtils";
 import { geohashEncode } from "@/lib/geohash";
 import {
@@ -42,6 +51,8 @@ import {
 import {
   onAuthStateChanged,
   signInWithPopup,
+  signInWithCredential,
+  GoogleAuthProvider,
   signOut,
   User,
 } from "firebase/auth";
@@ -87,6 +98,7 @@ interface AdminContextType {
   saveEventEdit: (event: EventoDB) => Promise<void>;
   deleteEvent: (eventId: string, motivo: string) => Promise<void>;
   updateUserStatus: (uid: string, nuovoStato: 'attivo' | 'sospeso' | 'bannato' | 'shadowbanned') => Promise<void>;
+  deleteUser: (uid: string, motivo?: string) => Promise<boolean>;
   markRejectedEventAsExamined: (id: string) => Promise<void>;
   deleteRejectedEvent: (id: string) => Promise<void>;
   approveOrganizerRequest: (request: RichiestaOrganizzatoreDB) => Promise<void>;
@@ -115,6 +127,10 @@ interface AdminContextType {
   loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
   refreshData: () => void;
+  currentEnv: FirebaseEnv;
+  setFirebaseEnv: (env: FirebaseEnv) => void;
+  isDevAuthMissing: boolean;
+  authenticateDev: () => Promise<void>;
 }
 
 const defaultFeatureFlags: FeatureFlagDB[] = [
@@ -189,6 +205,36 @@ const AdminContext = createContext<AdminContextType | undefined>(undefined);
 
 export function AdminProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentEnv, setCurrentEnvState] = useState<FirebaseEnv>("prod");
+  const [devUser, setDevUser] = useState<User | null>(null);
+
+  const rtdb = useMemo(() => (currentEnv === "dev" ? devRtdb : prodRtdb), [currentEnv]);
+  const storage = useMemo(() => (currentEnv === "dev" ? devStorage : prodStorage), [currentEnv]);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("riwy_active_env");
+      if (saved === "dev" || saved === "prod") {
+        setCurrentEnvState(saved);
+      }
+    } catch {}
+  }, []);
+
+  const setFirebaseEnv = useCallback((env: FirebaseEnv) => {
+    setCurrentEnvState(env);
+    try {
+      localStorage.setItem("riwy_active_env", env);
+    } catch {}
+    setIsLoading(true);
+    setRefreshKey((k) => k + 1);
+  }, []);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(devAuth, (u) => {
+      setDevUser(u);
+    });
+    return () => unsub();
+  }, []);
   const [adminEmail, setAdminEmail] = useState<string>("");
   const [isSuperAdmin, setIsSuperAdmin] = useState<boolean>(false);
   const [isAuthChecking, setIsAuthChecking] = useState<boolean>(true);
@@ -228,6 +274,19 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const dismissToast = useCallback(() => setToast(null), []);
+
+  const authenticateDev = useCallback(async () => {
+    try {
+      await signInWithPopup(devAuth, googleProvider);
+      notify("success", "Autenticato con successo su Rook Dev!");
+    } catch (e: any) {
+      if (e?.code === "auth/popup-closed-by-user" || e?.code === "auth/cancelled-popup-request") return;
+      console.error("Dev sign in error:", e);
+      notify("error", `Accesso Dev non riuscito: ${errText(e)}`);
+    }
+  }, [notify]);
+
+  const isDevAuthMissing = currentEnv === "dev" && isSuperAdmin && !devUser;
 
   useEffect(() => {
     return () => {
@@ -645,7 +704,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     return () => {
       unsubs.forEach((u) => u());
     };
-  }, [isSuperAdmin, refreshKey, notify]);
+  }, [isSuperAdmin, rtdb, refreshKey, notify]);
 
   // "Online" = users whose app wrote a recent `ultimoAccesso` (real data, no estimation).
   const onlineUsersCount = useMemo(() => {
@@ -673,9 +732,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         console.error("Errore salvataggio audit log:", e);
         notify("error", `Azione eseguita ma audit log non salvato: ${errText(e)}`);
       }
-    },
-    [currentUser, adminEmail, notify]
-  );
+    }, [currentUser, adminEmail, notify, rtdb]);
 
   const fetchChatMessages = useCallback(
     async (chatId: string): Promise<ChatMessageDB[]> => {
@@ -700,7 +757,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         return [];
       }
     },
-    []
+    [rtdb]
   );
 
   // 1. Toggle Booster
@@ -733,7 +790,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         notify("error", `Booster non modificato: ${errText(e)}`);
       }
     },
-    [events, addAuditLog, notify]
+    [events, addAuditLog, notify, rtdb]
   );
 
   // 2. Toggle Oscurato / Sospeso
@@ -759,7 +816,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         notify("error", `Visibilità non modificata: ${errText(e)}`);
       }
     },
-    [events, addAuditLog, notify]
+    [events, addAuditLog, notify, rtdb]
   );
 
   // 3. Save Event Edit — only the fields editable from the panel are written
@@ -794,7 +851,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         notify("error", `Evento non salvato: ${errText(e)}`);
       }
     },
-    [events, addAuditLog, notify]
+    [events, addAuditLog, notify, rtdb]
   );
 
   // 4. Delete Event
@@ -820,7 +877,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         notify("error", `Evento non eliminato: ${errText(e)}`);
       }
     },
-    [events, addAuditLog, notify]
+    [events, addAuditLog, notify, rtdb]
   );
 
   // 5. Update User Status
@@ -851,7 +908,33 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         notify("error", `Utente non aggiornato: ${errText(e)}`);
       }
     },
-    [users, addAuditLog, notify]
+    [users, addAuditLog, notify, rtdb]
+  );
+
+  // 5.1 Delete User from database (/utenti/$uid)
+  const deleteUser = useCallback(
+    async (uid: string, motivo: string = ""): Promise<boolean> => {
+      const u = users.find((x) => x.firebaseUid === uid);
+      try {
+        await remove(ref(rtdb, `utenti/${uid}`));
+        notify("success", `Utente '${u?.username || u?.email || uid}' eliminato definitivamente dal database.`);
+
+        await addAuditLog({
+          azione: "ELIMINAZIONE_UTENTE",
+          targetTipo: "utente",
+          targetId: uid,
+          dettagli: `Utente '${u?.username || u?.email || uid}' rimosso dal database. Motivo: ${motivo || "Nessun motivo specificato"}`,
+          diffPrima: { username: u?.username, email: u?.email, stato: u?.stato, isEnte: u?.isEnte },
+          diffDopo: null,
+        });
+        return true;
+      } catch (e) {
+        console.error("Errore eliminazione utente:", e);
+        notify("error", `Errore durante l'eliminazione dell'utente: ${errText(e)}`);
+        return false;
+      }
+    },
+    [users, addAuditLog, notify, rtdb]
   );
 
   // 6. Approve Organizer Request — mirrors EventoRepository.accettaRichiestaOrganizzatore
@@ -918,7 +1001,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         notify("error", `Richiesta non approvata: ${errText(e)}`);
       }
     },
-    [users, addAuditLog, notify]
+    [users, addAuditLog, notify, rtdb]
   );
 
   // 7. Reject Organizer Request
@@ -962,7 +1045,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         notify("error", `Richiesta non respinta: ${errText(e)}`);
       }
     },
-    [organizerRequests, addAuditLog, notify]
+    [organizerRequests, addAuditLog, notify, rtdb]
   );
 
   // 7a. Send Chat Message to Ente (writes to /chats/admin_${idEnte} and notifies organizer)
@@ -1033,7 +1116,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
     },
-    [organizers, addAuditLog, notify]
+    [organizers, addAuditLog, notify, rtdb]
   );
 
   // 7b. Suspend Ente for N days (with in-app notification)
@@ -1092,7 +1175,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
     },
-    [organizers, addAuditLog, notify]
+    [organizers, addAuditLog, notify, rtdb]
   );
 
   // 7c. Reactivate Ente
@@ -1145,7 +1228,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
     },
-    [organizers, addAuditLog, notify]
+    [organizers, addAuditLog, notify, rtdb]
   );
 
   // 7d. Delete Ente (with in-app notification)
@@ -1199,7 +1282,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
     },
-    [organizers, addAuditLog, notify]
+    [organizers, addAuditLog, notify, rtdb]
   );
 
   // 7e. Toggle Ente Badge (qualsiasi badge della lista assegnabile)
@@ -1285,7 +1368,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
     },
-    [organizers, addAuditLog, notify]
+    [organizers, addAuditLog, notify, rtdb]
   );
 
   // 7f. Toggle Ente Verificato (retrocompatibilità)
@@ -1334,7 +1417,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         notify("error", `Segnalazione non risolta: ${errText(e)}`);
       }
     },
-    [adminEmail, addAuditLog, notify]
+    [adminEmail, addAuditLog, notify, rtdb]
   );
 
   const reopenReport = useCallback(
@@ -1370,7 +1453,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         notify("error", `Operazione non riuscita: ${errText(e)}`);
       }
     },
-    [addAuditLog, notify]
+    [addAuditLog, notify, rtdb]
   );
 
   // Moderazione AI Shield: Segna come esaminato / da esaminare
@@ -1400,7 +1483,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         notify("error", `Errore aggiornamento: ${errText(e)}`);
       }
     },
-    [rejectedEvents, addAuditLog, notify]
+    [rejectedEvents, addAuditLog, notify, rtdb]
   );
 
   // Moderazione AI Shield: Elimina record respinto
@@ -1421,7 +1504,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         notify("error", `Errore eliminazione: ${errText(e)}`);
       }
     },
-    [rejectedEvents, addAuditLog, notify]
+    [rejectedEvents, addAuditLog, notify, rtdb]
   );
 
   // 9. Feature Flag / Kill Switch (state comes back from the /feature_flags listener)
@@ -1448,7 +1531,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         notify("error", `Flag non modificata: ${errText(e)}`);
       }
     },
-    [featureFlags, addAuditLog, notify]
+    [featureFlags, addAuditLog, notify, rtdb]
   );
 
   // 10. Queue a Broadcast Push Notification (/notifiche_broadcast)
@@ -1479,7 +1562,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
     },
-    [adminEmail, addAuditLog, notify]
+    [adminEmail, addAuditLog, notify, rtdb]
   );
 
   // Studio Organizzatore: crea/modifica un evento esattamente come fa AddEvento nell'app.
@@ -1513,7 +1596,8 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         if (cover) {
           urlCopertina = await processAndUploadEventImage(
             cover,
-            `eventi/${idEvento}/copertina_${Date.now()}.jpg`
+            `eventi/${idEvento}/copertina_${Date.now()}.jpg`,
+            storage
           );
         }
 
@@ -1521,7 +1605,8 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         if (programma) {
           urlMenu = await processAndUploadEventImage(
             programma,
-            `eventi/${idEvento}/programma_${Date.now()}.jpg`
+            `eventi/${idEvento}/programma_${Date.now()}.jpg`,
+            storage
           );
         }
 
@@ -1587,7 +1672,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
     },
-    [events, currentUser, adminEmail, addAuditLog, notify]
+    [events, currentUser, adminEmail, addAuditLog, notify, rtdb, storage]
   );
 
   // Crea (o aggiorna) il profilo organizzatore dell'amministratore, con tutti i campi previsti dall'app Rook.
@@ -1682,7 +1767,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
     },
-    [currentUser, organizers, addAuditLog, notify]
+    [currentUser, organizers, addAuditLog, notify, rtdb]
   );
 
   const deleteOwnEnte = useCallback(async (): Promise<boolean> => {
@@ -1762,7 +1847,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       notify("error", `Impossibile eliminare l'account organizzatore: ${errText(e)}`);
       return false;
     }
-  }, [currentUser, organizers, events, addAuditLog, notify]);
+  }, [currentUser, organizers, events, addAuditLog, notify, rtdb]);
 
   const reinviaEmailVerificaEnte = useCallback(
     async (idEnte: string) => {
@@ -1786,7 +1871,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
     },
-    [notify]
+    [notify, rtdb]
   );
 
   // --- Gestione Categorie ---
@@ -1842,7 +1927,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
     },
-    [categories, addAuditLog, notify]
+    [categories, addAuditLog, notify, rtdb]
   );
 
   const updateCategoria = useCallback(
@@ -1879,7 +1964,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
     },
-    [categories, addAuditLog, notify]
+    [categories, addAuditLog, notify, rtdb]
   );
 
   const toggleOscuraCategoria = useCallback(
@@ -1913,7 +1998,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
     },
-    [categories, addAuditLog, notify]
+    [categories, addAuditLog, notify, rtdb]
   );
 
   const deleteCategoria = useCallback(
@@ -1939,7 +2024,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
     },
-    [categories, addAuditLog, notify]
+    [categories, addAuditLog, notify, rtdb]
   );
 
   const inizializzaCategorieDefault = useCallback(async (): Promise<boolean> => {
@@ -1964,11 +2049,19 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       notify("error", `Errore: ${err.message}`);
       return false;
     }
-  }, [addAuditLog, notify]);
+  }, [addAuditLog, notify, rtdb]);
 
   const loginWithGoogle = useCallback(async () => {
     try {
-      await signInWithPopup(auth, googleProvider);
+      const res = await signInWithPopup(auth, googleProvider);
+      try {
+        const cred = GoogleAuthProvider.credentialFromResult(res);
+        if (cred) {
+          await signInWithCredential(devAuth, cred);
+        }
+      } catch (e) {
+        console.warn("Auto-sync devAuth:", e);
+      }
     } catch (e: any) {
       if (e?.code === "auth/popup-closed-by-user" || e?.code === "auth/cancelled-popup-request") return;
       console.error("Google sign in error:", e);
@@ -1979,6 +2072,9 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => {
     try {
       await signOut(auth);
+      try {
+        await signOut(devAuth);
+      } catch {}
     } catch (e) {
       console.error("Logout error:", e);
       notify("error", `Uscita non riuscita: ${errText(e)}`);
@@ -2022,6 +2118,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         saveEventEdit,
         deleteEvent,
         updateUserStatus,
+        deleteUser,
         approveOrganizerRequest,
         rejectOrganizerRequest,
         sendChatMessageToEnte,
@@ -2052,6 +2149,10 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         loginWithGoogle,
         logout,
         refreshData,
+        currentEnv,
+        setFirebaseEnv,
+        isDevAuthMissing,
+        authenticateDev,
       }}
     >
       {children}

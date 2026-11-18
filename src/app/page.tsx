@@ -100,6 +100,10 @@ export default function AdminApp() {
     currentUser,
     isSuperAdmin,
     isAuthChecking,
+    currentEnv,
+    setFirebaseEnv,
+    isDevAuthMissing,
+    authenticateDev,
   } = useAdmin();
 
   if (!isSuperAdmin) {
@@ -119,7 +123,8 @@ export default function AdminApp() {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Navbar */}
-        <header className="h-16 bg-[#0d131f]/90 border-b border-[#1e293b] px-6 flex items-center justify-between sticky top-0 z-30 backdrop-blur-md">
+        <header className="h-16 bg-[#0d131f]/90 border-b border-[#1e293b] px-6 flex items-center justify-between sticky top-0 z-30 backdrop-blur-md relative">
+          <div className={`h-0.5 w-full absolute top-0 left-0 transition-colors ${currentEnv === "dev" ? "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]" : "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"}`} />
           <div className="flex items-center space-x-3">
             <span className="text-xs text-slate-400">Rook Web Operations</span>
             <span className="text-slate-600">/</span>
@@ -129,6 +134,49 @@ export default function AdminApp() {
           </div>
 
           <div className="flex items-center space-x-3 text-xs">
+            {/* Database Environment Selector (PROD vs DEV) */}
+            <div className="flex items-center space-x-1 p-0.5 bg-[#141d2e] rounded-lg border border-slate-800">
+              <button
+                type="button"
+                onClick={() => setFirebaseEnv("prod")}
+                title="Database Produzione (cosafare-c0e33)"
+                className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition ${
+                  currentEnv === "prod"
+                    ? "bg-emerald-600 text-white shadow-sm"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${currentEnv === "prod" ? "bg-white" : "bg-emerald-400"}`}></span>
+                <span>PROD</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFirebaseEnv("dev")}
+                title="Database Sviluppo (rook-dev-ed702)"
+                className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition ${
+                  currentEnv === "dev"
+                    ? "bg-amber-600 text-white shadow-sm"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${currentEnv === "dev" ? "bg-white" : "bg-amber-400"}`}></span>
+                <span>DEV</span>
+              </button>
+            </div>
+
+            {/* Dev Auth Warning / Connect Button */}
+            {isDevAuthMissing && (
+              <button
+                type="button"
+                onClick={authenticateDev}
+                title="Clicca per sincronizzare il tuo account Google anche sul progetto Dev per poter salvare modifiche"
+                className="flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-semibold text-xs animate-pulse transition"
+              >
+                <span>🔑</span>
+                <span>Accedi a Dev</span>
+              </button>
+            )}
+
             {/* Live Online Badge (users with a recent ultimoAccesso) */}
             <div
               title="Utenti con accesso negli ultimi 10 minuti (campo ultimoAccesso)"
@@ -140,7 +188,7 @@ export default function AdminApp() {
 
             <div className="hidden sm:flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-[#141d2e] border border-slate-800 text-slate-400">
               <span className={`w-2 h-2 rounded-full ${isLiveConnected ? "bg-emerald-400" : "bg-amber-400 animate-pulse"}`}></span>
-              <span>{isLiveConnected ? "RTDB Europe-West1 Connesso" : "In Connessione..."}</span>
+              <span>{isLiveConnected ? (currentEnv === "dev" ? "Dev RTDB Connesso" : "Prod RTDB Connesso") : "In Connessione..."}</span>
             </div>
 
             <button

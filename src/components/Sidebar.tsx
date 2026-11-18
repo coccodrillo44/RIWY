@@ -19,7 +19,18 @@ import {
 } from "lucide-react";
 
 export function Sidebar() {
-  const { activeTab, setActiveTab, reports, organizerRequests, rejectedEvents, isLiveConnected, adminEmail, logout } = useAdmin();
+  const {
+    activeTab,
+    setActiveTab,
+    reports,
+    organizerRequests,
+    rejectedEvents,
+    isLiveConnected,
+    adminEmail,
+    logout,
+    currentEnv,
+    setFirebaseEnv,
+  } = useAdmin();
 
   const pendingReportsCount = useMemo(() => {
     if (!Array.isArray(reports)) return 0;
@@ -79,12 +90,58 @@ export function Sidebar() {
           <div>
             <div className="flex items-center space-x-1.5">
               <span className="font-bold text-lg tracking-tight text-white">RIWY</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-semibold border border-amber-500/30">
-                LIVE
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded font-semibold border ${
+                  currentEnv === "dev"
+                    ? "bg-amber-500/20 text-amber-300 border-amber-500/30"
+                    : "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
+                }`}
+              >
+                {currentEnv === "dev" ? "DEV" : "PROD"}
               </span>
             </div>
             <p className="text-xs text-slate-400">Controllo Totale Rook</p>
           </div>
+        </div>
+      </div>
+
+      {/* Active Database Environment Switcher */}
+      <div className="px-5 py-2.5 bg-[#090d16]/40 border-b border-[#1e293b]/60">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Database</span>
+          <span
+            className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-semibold ${
+              currentEnv === "dev"
+                ? "text-amber-300 bg-amber-500/15 border border-amber-500/30"
+                : "text-emerald-300 bg-emerald-500/15 border border-emerald-500/30"
+            }`}
+          >
+            {currentEnv === "dev" ? "rook-dev-ed702" : "cosafare-c0e33"}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-1 p-0.5 bg-[#141d2e] rounded-lg border border-slate-800 text-center text-xs">
+          <button
+            type="button"
+            onClick={() => setFirebaseEnv("prod")}
+            className={`py-1 rounded font-semibold transition ${
+              currentEnv === "prod"
+                ? "bg-emerald-600 text-white shadow-sm"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            PROD
+          </button>
+          <button
+            type="button"
+            onClick={() => setFirebaseEnv("dev")}
+            className={`py-1 rounded font-semibold transition ${
+              currentEnv === "dev"
+                ? "bg-amber-600 text-white shadow-sm"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            DEV
+          </button>
         </div>
       </div>
 
@@ -104,7 +161,7 @@ export function Sidebar() {
             ></span>
           </span>
           <span className="text-slate-300 font-medium">
-            {isLiveConnected ? "Firebase Live RTDB" : "In Connessione..."}
+            {isLiveConnected ? (currentEnv === "dev" ? "Dev RTDB Connesso" : "Prod RTDB Connesso") : "In Connessione..."}
           </span>
         </div>
         <span className="text-[10px] text-slate-500 font-mono">eu-west1</span>

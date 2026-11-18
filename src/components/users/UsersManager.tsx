@@ -14,19 +14,21 @@ import {
   Phone,
   Mail,
   MapPin,
+  Trash2,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
 export function UsersManager() {
-  const { users, updateUserStatus } = useAdmin();
+  const { users, updateUserStatus, deleteUser } = useAdmin();
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedUser, setSelectedUser] = useState<UtenteDB | null>(null);
   const [confirmModal, setConfirmModal] = useState<{
     user: UtenteDB;
-    action: "shadowbanned" | "sospeso";
+    action: "shadowbanned" | "sospeso" | "elimina";
   } | null>(null);
+  const [motivoEliminazione, setMotivoEliminazione] = useState("");
 
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
@@ -220,6 +222,16 @@ export function UsersManager() {
                             </button>
                           </>
                         )}
+                        <button
+                          onClick={() => {
+                            setMotivoEliminazione("");
+                            setConfirmModal({ user: u, action: "elimina" });
+                          }}
+                          title="Elimina Definitivamente dal DB"
+                          className="p-1.5 rounded-lg bg-red-600/10 text-red-400 hover:bg-red-600/20 hover:text-red-300 transition"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -296,10 +308,23 @@ export function UsersManager() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-end pt-4 border-t border-[#1e293b]">
+              <div className="flex items-center justify-between pt-4 border-t border-[#1e293b]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const u = selectedUser;
+                    setSelectedUser(null);
+                    setMotivoEliminazione("");
+                    setConfirmModal({ user: u, action: "elimina" });
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-red-600/15 border border-red-500/30 text-red-400 hover:bg-red-600/25 flex items-center space-x-1.5 transition text-xs font-semibold"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Elimina dal Database</span>
+                </button>
                 <button
                   onClick={() => setSelectedUser(null)}
-                  className="px-4 py-1.5 rounded-lg bg-slate-800 text-slate-200 hover:bg-slate-700"
+                  className="px-4 py-1.5 rounded-lg bg-slate-800 text-slate-200 hover:bg-slate-700 text-xs font-medium"
                 >
                   Chiudi
                 </button>
@@ -309,7 +334,7 @@ export function UsersManager() {
         </div>
       )}
 
-      {/* Confirmation Modal: Shadowban / Rimuovi Accesso */}
+      {/* Confirmation Modal: Shadowban / Rimuovi Accesso / Eliminazione */}
       {confirmModal && (
         <div className="fixed inset-0 bg-black/75 flex items-center justify-center p-4 z-50 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="bg-[#0f172a] border border-[#1e293b] rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl">
@@ -319,11 +344,15 @@ export function UsersManager() {
                 className={`p-3 rounded-xl shrink-0 ${
                   confirmModal.action === "shadowbanned"
                     ? "bg-purple-500/15 text-purple-400 border border-purple-500/30"
+                    : confirmModal.action === "elimina"
+                    ? "bg-red-600/20 text-red-400 border border-red-500/40"
                     : "bg-red-500/15 text-red-400 border border-red-500/30"
                 }`}
               >
                 {confirmModal.action === "shadowbanned" ? (
                   <Ghost className="w-6 h-6" />
+                ) : confirmModal.action === "elimina" ? (
+                  <Trash2 className="w-6 h-6" />
                 ) : (
                   <UserX className="w-6 h-6" />
                 )}
@@ -332,11 +361,15 @@ export function UsersManager() {
                 <h3 className="text-base font-bold text-white tracking-tight">
                   {confirmModal.action === "shadowbanned"
                     ? "Conferma Shadowban Silenzioso"
+                    : confirmModal.action === "elimina"
+                    ? "Conferma Eliminazione Definitiva"
                     : "Conferma Sospensione Accesso"}
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
                   {confirmModal.action === "shadowbanned"
                     ? "Limitazione visibilità interazioni dell'utente"
+                    : confirmModal.action === "elimina"
+                    ? "Rimozione permanente dell'utente da Firebase Realtime Database"
                     : "Revoca immediata dei permessi di accesso"}
                 </p>
               </div>
@@ -369,42 +402,78 @@ export function UsersManager() {
               className={`p-3 rounded-xl text-xs border ${
                 confirmModal.action === "shadowbanned"
                   ? "bg-purple-500/10 border-purple-500/25 text-purple-200"
+                  : confirmModal.action === "elimina"
+                  ? "bg-red-500/15 border-red-500/30 text-red-200"
                   : "bg-red-500/10 border-red-500/25 text-red-200"
               }`}
             >
               {confirmModal.action === "shadowbanned" ? (
                 <span>
-                  <strong>Nota:</strong> Con lo shadowban l'utente potrà continuare ad aprire l'app normalmente, ma i suoi commenti, recensioni e segnalazioni non saranno più visibili agli altri utenti né al pubblico.
+                  <strong>Nota:</strong> Con lo shadowban l&apos;utente potrà continuare ad aprire l&apos;app normalmente, ma i suoi commenti, recensioni e segnalazioni non saranno più visibili agli altri utenti né al pubblico.
+                </span>
+              ) : confirmModal.action === "elimina" ? (
+                <span>
+                  <strong>Attenzione:</strong> Il record dell&apos;utente verrà cancellato irrevocabilmente dal nodo <code className="text-red-300 font-mono">/utenti/{confirmModal.user.firebaseUid}</code> nel database. L&apos;operazione è immediata e irreversibile.
                 </span>
               ) : (
                 <span>
-                  <strong>Attenzione:</strong> L'accesso dell'utente verrà revocato immediatamente. Non potrà più effettuare operazioni nell'app Rook finché lo stato non verrà reimpostato su &quot;Attivo&quot;.
+                  <strong>Attenzione:</strong> L&apos;accesso dell&apos;utente verrà revocato immediatamente. Non potrà più effettuare operazioni nell&apos;app Rook finché lo stato non verrà reimpostato su &quot;Attivo&quot;.
                 </span>
               )}
             </div>
+
+            {/* Campo Motivo Eliminazione opzionale per Audit */}
+            {confirmModal.action === "elimina" && (
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold text-slate-300 block">
+                  Motivo eliminazione (registrato nell&apos;Audit Log):
+                </label>
+                <input
+                  type="text"
+                  placeholder="Es: Violazione termini, richiesta utente, account spam..."
+                  value={motivoEliminazione}
+                  onChange={(e) => setMotivoEliminazione(e.target.value)}
+                  className="w-full bg-[#141d2e] border border-slate-700 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-red-500"
+                />
+              </div>
+            )}
 
             {/* Azioni Conferma / Annulla */}
             <div className="flex items-center justify-end space-x-3 pt-2">
               <button
                 type="button"
-                onClick={() => setConfirmModal(null)}
+                onClick={() => {
+                  setConfirmModal(null);
+                  setMotivoEliminazione("");
+                }}
                 className="px-4 py-2 rounded-xl bg-[#1e293b] hover:bg-[#283548] text-slate-300 font-semibold text-xs transition"
               >
                 Annulla
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  updateUserStatus(confirmModal.user.firebaseUid, confirmModal.action);
+                onClick={async () => {
+                  if (confirmModal.action === "elimina") {
+                    await deleteUser(confirmModal.user.firebaseUid, motivoEliminazione);
+                  } else {
+                    await updateUserStatus(confirmModal.user.firebaseUid, confirmModal.action);
+                  }
                   setConfirmModal(null);
+                  setMotivoEliminazione("");
                 }}
                 className={`px-4 py-2 rounded-xl text-white font-bold text-xs transition shadow-lg ${
                   confirmModal.action === "shadowbanned"
                     ? "bg-purple-600 hover:bg-purple-500 shadow-purple-600/30"
+                    : confirmModal.action === "elimina"
+                    ? "bg-red-600 hover:bg-red-500 shadow-red-600/40 border border-red-400/40"
                     : "bg-red-600 hover:bg-red-500 shadow-red-600/30"
                 }`}
               >
-                {confirmModal.action === "shadowbanned" ? "Applica Shadowban" : "Rimuovi Accesso"}
+                {confirmModal.action === "shadowbanned"
+                  ? "Applica Shadowban"
+                  : confirmModal.action === "elimina"
+                  ? "Elimina Definitivamente"
+                  : "Rimuovi Accesso"}
               </button>
             </div>
           </div>
