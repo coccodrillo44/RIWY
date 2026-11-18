@@ -1,5 +1,5 @@
 import { storage } from "./firebase";
-import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import { ref as storageRef, uploadBytes, getDownloadURL, FirebaseStorage } from "firebase/storage";
 
 /**
  * Converte e comprime un file immagine (locandina o menu) in formato JPEG ottimizzato.
@@ -82,13 +82,14 @@ export async function compressImageToDataUrl(
  */
 export async function processAndUploadEventImage(
   file: File,
-  storagePath: string
+  storagePath: string,
+  targetStorage: FirebaseStorage = storage
 ): Promise<string> {
   const dataUrl = await compressImageToDataUrl(file);
   if (!dataUrl) return "";
 
   try {
-    const sRef = storageRef(storage, storagePath);
+    const sRef = storageRef(targetStorage, storagePath);
 
     // Ricostruisce un Blob compresso per l'eventuale upload su Storage
     const base64Data = dataUrl.split(",")[1];
