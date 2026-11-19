@@ -15,6 +15,9 @@ import {
   Database,
   ExternalLink,
   History,
+  Zap,
+  Clock,
+  Sparkles,
 } from "lucide-react";
 import { getCategoryBadgeClass, formatEventDate, isBoostAttivo, isEventoPassato, extractProvince, normalizeCategory } from "@/lib/utils";
 
@@ -22,6 +25,7 @@ export function EventsManager() {
   const {
     events,
     toggleBooster,
+    setEventBooster,
     toggleOscurato,
     saveEventEdit,
     deleteEvent,
@@ -42,6 +46,14 @@ export function EventsManager() {
   const [editingEvent, setEditingEvent] = useState<EventoDB | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteReason, setDeleteReason] = useState("");
+
+  // Booster Modal State
+  const [boosterEvent, setBoosterEvent] = useState<EventoDB | null>(null);
+  const [boosterDurationMode, setBoosterDurationMode] = useState<"24h" | "3d" | "7d" | "14d" | "30d" | "event_end" | "custom">("7d");
+  const [boosterCustomDate, setBoosterCustomDate] = useState("");
+  const [boosterTipo, setBoosterTipo] = useState("GOLD");
+  const [showBoosterPicker, setShowBoosterPicker] = useState(false);
+  const [boosterSearchQuery, setBoosterSearchQuery] = useState("");
 
   const categories = useMemo(() => {
     const list = dynamicCategories.map((c) => c.nome);
@@ -228,6 +240,19 @@ export function EventsManager() {
             <option value="likes">Ordina: Più popolari (Like 👍)</option>
             <option value="titolo">Ordina: Alfabetico (A-Z)</option>
           </select>
+
+          <button
+            type="button"
+            onClick={() => {
+              setBoosterSearchQuery("");
+              setShowBoosterPicker(true);
+            }}
+            className="px-3 py-2 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 hover:bg-amber-500/25 flex items-center space-x-1.5 transition text-xs font-semibold shrink-0"
+            title="Seleziona e attiva manualmente il booster su qualsiasi evento"
+          >
+            <Flame className="w-3.5 h-3.5 text-amber-400 fill-current" />
+            <span>Assegna Booster</span>
+          </button>
         </div>
       </div>
 
@@ -299,15 +324,25 @@ export function EventsManager() {
 
                     <td className="px-4 py-3 text-center whitespace-nowrap">
                       <button
-                        onClick={() => toggleBooster(ev.id)}
+                        onClick={() => {
+                          setBoosterEvent(ev);
+                          setBoosterTipo(ev.boostTipo || "GOLD");
+                          setBoosterDurationMode("7d");
+                          setBoosterCustomDate("");
+                        }}
                         className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold transition ${
                           hasBoost
-                            ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/30"
+                            ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/30 hover:bg-amber-400"
                             : "bg-[#1e293b] text-slate-400 hover:text-amber-400 hover:bg-[#283548]"
                         }`}
+                        title={
+                          hasBoost
+                            ? `Booster ${ev.boostTipo || "GOLD"} attivo fino al ${new Date(Number(ev.boostScadenza || 0)).toLocaleString("it-IT")}. Clicca per gestire.`
+                            : "Clicca per impostare o attivare il Booster manualmente"
+                        }
                       >
                         <Flame className={`w-3.5 h-3.5 mr-1 ${hasBoost ? "fill-current" : ""}`} />
-                        {hasBoost ? "ATTIVO" : "OFF"}
+                        {hasBoost ? (ev.boostTipo ? `${ev.boostTipo}` : "ATTIVO") : "OFF"}
                       </button>
                     </td>
 
@@ -536,6 +571,306 @@ export function EventsManager() {
               >
                 Elimina Evento
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Booster Configuration Modal */}
+      {boosterEvent && (
+        <div className="fixed inset-0 bg-black/75 flex items-center justify-center p-4 z-50 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-[#0f172a] border border-amber-500/40 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl">
+            {/* Header */}
+            <div className="flex items-start justify-between pb-3 border-b border-[#1e293b]">
+              <div className="flex items-center space-x-3">
+                <div className="p-3 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                  <Flame className="w-6 h-6 fill-current" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white tracking-tight">
+                    Gestione Booster Manuale
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Metti in primo piano e attiva il badge dorato &quot;⚡ In Evidenza&quot; per l&apos;app Rook
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setBoosterEvent(null)}
+                className="text-slate-400 hover:text-slate-200 text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Evento Info Card */}
+            <div className="p-3.5 rounded-xl bg-[#141d2e] border border-slate-800 space-y-1.5 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Titolo:</span>
+                <span className="font-bold text-white truncate max-w-[260px]">
+                  {boosterEvent.titolo}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Organizzatore:</span>
+                <span className="text-slate-300 truncate max-w-[260px]">
+                  {boosterEvent.organizzatore || "Non specificato"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Stato attuale:</span>
+                {isBoostAttivo(boosterEvent) ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-slate-950 inline-flex items-center gap-1 shadow-sm">
+                    <Flame className="w-3 h-3 fill-current" />
+                    ATTIVO ({boosterEvent.boostTipo || "GOLD"}) fino al {new Date(Number(boosterEvent.boostScadenza || 0)).toLocaleString("it-IT")}
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-800 text-slate-400">
+                    Booster non attivo
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Configurazione Tipo & Durata */}
+            <div className="space-y-4 text-xs">
+              {/* Tipo Booster */}
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1.5">
+                  1. Seleziona Tipologia Booster
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { key: "GOLD", label: "🥇 GOLD", desc: "In Evidenza Standard" },
+                    { key: "FLASH", label: "⚡ FLASH", desc: "Promozione Rapida" },
+                    { key: "PREMIUM", label: "💎 PREMIUM", desc: "Massima Priorità" },
+                  ].map((t) => (
+                    <button
+                      key={t.key}
+                      type="button"
+                      onClick={() => setBoosterTipo(t.key)}
+                      className={`p-2.5 rounded-xl border text-center transition ${
+                        boosterTipo === t.key
+                          ? "bg-amber-500/20 border-amber-500 text-amber-300 font-bold shadow-sm"
+                          : "bg-[#141d2e] border-slate-700 text-slate-300 hover:border-slate-600"
+                      }`}
+                    >
+                      <div className="font-semibold">{t.label}</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">{t.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Durata Preset */}
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1.5">
+                  2. Scegli Durata del Booster
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { key: "24h", label: "24 Ore", sub: "1 Giorno" },
+                    { key: "3d", label: "3 Giorni", sub: "Weekend" },
+                    { key: "7d", label: "7 Giorni", sub: "1 Settimana" },
+                    { key: "14d", label: "14 Giorni", sub: "2 Settimane" },
+                    { key: "30d", label: "30 Giorni", sub: "1 Mese" },
+                    { key: "event_end", label: "Fine Evento", sub: "Dall'evento" },
+                  ].map((p) => (
+                    <button
+                      key={p.key}
+                      type="button"
+                      onClick={() => setBoosterDurationMode(p.key as any)}
+                      className={`p-2 rounded-xl border text-center transition ${
+                        boosterDurationMode === p.key
+                          ? "bg-amber-500/20 border-amber-500 text-amber-300 font-bold"
+                          : "bg-[#141d2e] border-slate-700 text-slate-300 hover:border-slate-600"
+                      }`}
+                    >
+                      <div className="font-semibold text-xs">{p.label}</div>
+                      <div className="text-[10px] text-slate-400">{p.sub}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Durata Personalizzata */}
+              <div className="p-3 bg-[#141d2e] rounded-xl border border-slate-800 space-y-2">
+                <label className="flex items-center space-x-2 cursor-pointer text-slate-300">
+                  <input
+                    type="radio"
+                    name="durationMode"
+                    checked={boosterDurationMode === "custom"}
+                    onChange={() => setBoosterDurationMode("custom")}
+                    className="text-amber-500 focus:ring-0"
+                  />
+                  <span className="font-semibold">Oppure imposta Scadenza Personalizzata:</span>
+                </label>
+                {boosterDurationMode === "custom" && (
+                  <input
+                    type="datetime-local"
+                    value={boosterCustomDate}
+                    onChange={(e) => setBoosterCustomDate(e.target.value)}
+                    className="w-full bg-[#0f172a] border border-slate-700 rounded-lg p-2 text-white focus:outline-none focus:border-amber-500"
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* Azioni Modale */}
+            <div className="flex items-center justify-between pt-3 border-t border-[#1e293b]">
+              {isBoostAttivo(boosterEvent) ? (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await setEventBooster(boosterEvent.id, 0);
+                    setBoosterEvent(null);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-red-600/15 border border-red-500/30 text-red-400 hover:bg-red-600/25 transition text-xs font-semibold"
+                >
+                  Rimuovi Booster
+                </button>
+              ) : (
+                <div />
+              )}
+
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setBoosterEvent(null)}
+                  className="px-4 py-2 rounded-xl bg-[#141d2e] text-slate-300 hover:bg-[#1e293b] text-xs font-medium"
+                >
+                  Annulla
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    let computedScadenza = 0;
+                    const now = Date.now();
+                    if (boosterDurationMode === "24h") {
+                      computedScadenza = now + 24 * 3600 * 1000;
+                    } else if (boosterDurationMode === "3d") {
+                      computedScadenza = now + 3 * 86400 * 1000;
+                    } else if (boosterDurationMode === "7d") {
+                      computedScadenza = now + 7 * 86400 * 1000;
+                    } else if (boosterDurationMode === "14d") {
+                      computedScadenza = now + 14 * 86400 * 1000;
+                    } else if (boosterDurationMode === "30d") {
+                      computedScadenza = now + 30 * 86400 * 1000;
+                    } else if (boosterDurationMode === "event_end") {
+                      if (boosterEvent.date && boosterEvent.date.length > 0) {
+                        const maxEnd = Math.max(...boosterEvent.date.map((d) => Number(d.dataFine || d.dataInizio || 0)));
+                        computedScadenza = maxEnd > now ? maxEnd : now + 24 * 3600 * 1000;
+                      } else if (typeof boosterEvent.data === "number" && boosterEvent.data > 0) {
+                        computedScadenza = boosterEvent.data > now ? boosterEvent.data : now + 24 * 3600 * 1000;
+                      } else {
+                        computedScadenza = now + 7 * 86400 * 1000;
+                      }
+                    } else if (boosterDurationMode === "custom") {
+                      if (boosterCustomDate) {
+                        computedScadenza = new Date(boosterCustomDate).getTime();
+                      } else {
+                        computedScadenza = now + 7 * 86400 * 1000;
+                      }
+                    }
+                    await setEventBooster(boosterEvent.id, computedScadenza, boosterTipo);
+                    setBoosterEvent(null);
+                  }}
+                  className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition shadow-lg shadow-amber-500/20"
+                >
+                  Applica Booster
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Booster Picker Modal: search any event to boost */}
+      {showBoosterPicker && (
+        <div className="fixed inset-0 bg-black/75 flex items-center justify-center p-4 z-50 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-[#0f172a] border border-[#1e293b] rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between pb-3 border-b border-[#1e293b]">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <Flame className="w-5 h-5 text-amber-400 fill-current" />
+                  Seleziona Evento per Assegnazione Booster
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Cerca per titolo, organizzatore o comune per impostare il booster
+                </p>
+              </div>
+              <button
+                onClick={() => setShowBoosterPicker(false)}
+                className="text-slate-400 hover:text-slate-200 text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Cerca evento per titolo, ente o luogo..."
+                value={boosterSearchQuery}
+                onChange={(e) => setBoosterSearchQuery(e.target.value)}
+                className="w-full bg-[#141d2e] border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                autoFocus
+              />
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+              {events
+                .filter((e) => {
+                  if (!boosterSearchQuery.trim()) return true;
+                  const q = boosterSearchQuery.toLowerCase();
+                  return (
+                    (e.titolo || "").toLowerCase().includes(q) ||
+                    (e.organizzatore || "").toLowerCase().includes(q) ||
+                    (e.luogo || "").toLowerCase().includes(q)
+                  );
+                })
+                .slice(0, 30)
+                .map((e) => {
+                  const hasBoost = isBoostAttivo(e);
+                  return (
+                    <div
+                      key={e.id}
+                      className="p-3 rounded-xl bg-[#141d2e] border border-slate-800 hover:border-amber-500/40 flex items-center justify-between gap-3 transition"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-white text-xs truncate">
+                            {e.titolo}
+                          </span>
+                          {hasBoost && (
+                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-500 text-slate-950 shrink-0">
+                              ⚡ {e.boostTipo || "GOLD"}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
+                          <span>{e.organizzatore || "Organizzatore N/D"}</span>
+                          <span>•</span>
+                          <span>{e.luogo || "Toscana"}</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowBoosterPicker(false);
+                          setBoosterEvent(e);
+                          setBoosterTipo(e.boostTipo || "GOLD");
+                          setBoosterDurationMode("7d");
+                          setBoosterCustomDate("");
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition shrink-0"
+                      >
+                        Configura Booster
+                      </button>
+                    </div>
+                  );
+                })}
             </div>
           </div>
         </div>

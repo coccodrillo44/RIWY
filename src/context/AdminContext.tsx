@@ -26,6 +26,7 @@ import {
   ChatMessageDB,
   CategoriaDB,
   DEFAULT_CATEGORIE_LIST,
+  ReviewsStats,
 } from "@/types";
 import {
   auth,
@@ -92,8 +93,14 @@ interface AdminContextType {
   onlineUsersCount: number;
   rejectedEvents: EventoRespintoModerazione[];
   categories: CategoriaDB[];
+  deletedUsersCount: number;
+  reviewsStats: ReviewsStats;
+  chatsCount: number;
+  communitiesCount: number;
+  bozzeCount: number;
   // Actions
   toggleBooster: (eventId: string) => Promise<void>;
+  setEventBooster: (eventId: string, scadenzaTimestamp: number, tipo?: string) => Promise<boolean>;
   toggleOscurato: (eventId: string, oscurato: boolean, motivo?: string) => Promise<void>;
   saveEventEdit: (event: EventoDB) => Promise<void>;
   deleteEvent: (eventId: string, motivo: string) => Promise<void>;
@@ -266,6 +273,11 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   });
   const [rejectedEvents, setRejectedEvents] = useState<EventoRespintoModerazione[]>([]);
   const [categories, setCategories] = useState<CategoriaDB[]>([]);
+  const [deletedUsersCount, setDeletedUsersCount] = useState<number>(0);
+  const [reviewsStats, setReviewsStats] = useState<ReviewsStats>({ total: 0, average: "0.0" });
+  const [chatsCount, setChatsCount] = useState<number>(0);
+  const [communitiesCount, setCommunitiesCount] = useState<number>(0);
+  const [bozzeCount, setBozzeCount] = useState<number>(0);
 
   const notify = useCallback((type: ToastMessage["type"], text: string) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -357,6 +369,11 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       setOrganizerRequests([]);
       setReports([]);
       setAuditLogs([]);
+      setDeletedUsersCount(0);
+      setReviewsStats({ total: 0, average: "0.0" });
+      setChatsCount(0);
+      setCommunitiesCount(0);
+      setBozzeCount(0);
       setIsLiveConnected(false);
       return;
     }
@@ -696,6 +713,105 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
           fail("categorie")
         )
       );
+
+      // Utenti Eliminati (Tombstone) listener (/utenti_eliminati)
+      unsubs.push(
+        onValue(
+          ref(rtdb, "utenti_eliminati"),
+          (snap) => {
+            if (snap.exists()) {
+              setDeletedUsersCount(Object.keys(snap.val() as Record<string, any>).length);
+            } else {
+              setDeletedUsersCount(0);
+            }
+          },
+          () => setDeletedUsersCount(0)
+        )
+      );
+
+      // Recensioni listener (/recensioni)
+      unsubs.push(
+        onValue(
+          ref(rtdb, "recensioni"),
+          (snap) => {
+            if (snap.exists()) {
+              const val = snap.val() as Record<string, any>;
+              let total = 0;
+              let sum = 0;
+              Object.values(val).forEach((eventReviews) => {
+                if (typeof eventReviews === "object" && eventReviews !== null) {
+                  Object.values(eventReviews).forEach((rev: any) => {
+                    if (typeof rev === "object" && rev !== null) {
+                      total++;
+                      const rating = Number(rev.rating || rev.voto || rev.stelle || 0);
+                      if (rating > 0) sum += rating;
+                    }
+                  });
+                }
+              });
+              setReviewsStats({
+                total,
+                average: total > 0 ? (sum / total).toFixed(1) : "0.0",
+              });
+            } else {
+              setReviewsStats({ total: 0, average: "0.0" });
+            }
+          },
+          () => setReviewsStats({ total: 0, average: "0.0" })
+        )
+      );
+
+      // Chats listener (/chats)
+      unsubs.push(
+        onValue(
+          ref(rtdb, "chats"),
+          (snap) => {
+            if (snap.exists()) {
+              setChatsCount(Object.keys(snap.val() as Record<string, any>).length);
+            } else {
+              setChatsCount(0);
+            }
+          },
+          () => setChatsCount(0)
+        )
+      );
+
+      // Communities listener (/communities)
+      unsubs.push(
+        onValue(
+          ref(rtdb, "communities"),
+          (snap) => {
+            if (snap.exists()) {
+              setCommunitiesCount(Object.keys(snap.val() as Record<string, any>).length);
+            } else {
+              setCommunitiesCount(0);
+            }
+          },
+          () => setCommunitiesCount(0)
+        )
+      );
+
+      // Bozze Organizzatori listener (/bozze_organizzatori)
+      unsubs.push(
+        onValue(
+          ref(rtdb, "bozze_organizzatori"),
+          (snap) => {
+            if (snap.exists()) {
+              const val = snap.val() as Record<string, any>;
+              let totalBozze = 0;
+              Object.values(val).forEach((userBozze) => {
+                if (typeof userBozze === "object" && userBozze !== null) {
+                  totalBozze += Object.keys(userBozze).length;
+                }
+              });
+              setBozzeCount(totalBozze);
+            } else {
+              setBozzeCount(0);
+            }
+          },
+          () => setBozzeCount(0)
+        )
+      );
     } catch (e) {
       console.warn("Subscription setup error:", e);
       setIsLoading(false);
@@ -760,37 +876,58 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     [rtdb]
   );
 
-  // 1. Toggle Booster
+  // 1. Set / Toggle Booster Manuale
+  const setEventBooster = useCallback(
+    async (eventId: string, scadenzaTimestamp: number, tipo: string = "GOLD"): Promise<boolean> => {
+      const ev = events.find((e) => e.id === eventId);
+      if (!ev) return false;
+
+      const isDisattivazione = scadenzaTimestamp <= Date.now();
+      const finalScadenza = isDisattivazione ? 0 : scadenzaTimestamp;
+      const finalTipo = isDisattivazione ? "" : tipo;
+
+      try {
+        await update(ref(rtdb, `eventi/${eventId}`), {
+          boostScadenza: finalScadenza,
+          boostTipo: finalTipo,
+        });
+
+        notify(
+          "success",
+          isDisattivazione
+            ? `Booster disattivato per '${ev.titolo}'`
+            : `Booster ${finalTipo} attivato per '${ev.titolo}' fino al ${new Date(finalScadenza).toLocaleString("it-IT")}`
+        );
+
+        await addAuditLog({
+          azione: isDisattivazione ? "DISATTIVAZIONE_BOOSTER" : "ATTIVAZIONE_BOOSTER",
+          targetTipo: "evento",
+          targetId: eventId,
+          dettagli: isDisattivazione
+            ? `Booster rimosso per '${ev.titolo}'`
+            : `Booster '${finalTipo}' impostato manualmente fino al ${new Date(finalScadenza).toLocaleString("it-IT")} per '${ev.titolo}'`,
+          diffPrima: { boostScadenza: ev.boostScadenza ?? null, boostTipo: ev.boostTipo ?? null },
+          diffDopo: { boostScadenza: finalScadenza, boostTipo: finalTipo },
+        });
+        return true;
+      } catch (e) {
+        console.error("Errore impostazione booster:", e);
+        notify("error", `Booster non modificato: ${errText(e)}`);
+        return false;
+      }
+    },
+    [events, addAuditLog, notify, rtdb]
+  );
+
   const toggleBooster = useCallback(
     async (eventId: string) => {
       const ev = events.find((e) => e.id === eventId);
       if (!ev) return;
-
       const isAttivo = Number(ev.boostScadenza || 0) > Date.now();
       const nextScadenza = isAttivo ? 0 : Date.now() + 86400000 * 7;
-      const nextTipo = isAttivo ? "" : "GOLD";
-
-      try {
-        await update(ref(rtdb, `eventi/${eventId}`), {
-          boostScadenza: nextScadenza,
-          boostTipo: nextTipo,
-        });
-        notify("success", isAttivo ? "Booster disattivato" : "Booster attivato per 7 giorni");
-
-        await addAuditLog({
-          azione: isAttivo ? "DISATTIVAZIONE_BOOSTER" : "ATTIVAZIONE_BOOSTER",
-          targetTipo: "evento",
-          targetId: eventId,
-          dettagli: `${isAttivo ? "Disattivato" : "Attivato per 7 giorni"} Booster dorato per '${ev.titolo}'`,
-          diffPrima: { boostScadenza: ev.boostScadenza ?? null, boostTipo: ev.boostTipo ?? null },
-          diffDopo: { boostScadenza: nextScadenza, boostTipo: nextTipo },
-        });
-      } catch (e) {
-        console.error("Errore toggle booster:", e);
-        notify("error", `Booster non modificato: ${errText(e)}`);
-      }
+      await setEventBooster(eventId, nextScadenza, "GOLD");
     },
-    [events, addAuditLog, notify, rtdb]
+    [events, setEventBooster]
   );
 
   // 2. Toggle Oscurato / Sospeso
@@ -911,19 +1048,40 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     [users, addAuditLog, notify, rtdb]
   );
 
-  // 5.1 Delete User from database (/utenti/$uid)
+  // 5.1 Delete User from database (/utenti/$uid) + Tombstone for Backup Sanitation
   const deleteUser = useCallback(
     async (uid: string, motivo: string = ""): Promise<boolean> => {
       const u = users.find((x) => x.firebaseUid === uid);
       try {
+        // 1. Registra nel tombstone per la bonifica post-restore dei backup (GDPR Art. 17)
+        await set(ref(rtdb, `utenti_eliminati/${uid}`), {
+          uid,
+          timestamp: Date.now(),
+          dataEliminazione: Date.now(),
+          eliminatoDa: adminEmail || "RIWY_ADMIN",
+          email: u?.email || "N/D",
+          username: u?.username || "Utente",
+          motivo: motivo || "Eliminazione manuale da pannello RIWY",
+        });
+
+        // 2. Rimuove il profilo attivo
         await remove(ref(rtdb, `utenti/${uid}`));
-        notify("success", `Utente '${u?.username || u?.email || uid}' eliminato definitivamente dal database.`);
+
+        // 3. Rimuove i dati accessori collegati all'UID
+        await remove(ref(rtdb, `preferiti/${uid}`));
+        await remove(ref(rtdb, `organizzatori_seguiti/${uid}`));
+        await remove(ref(rtdb, `bozze_organizzatori/${uid}`));
+
+        notify(
+          "success",
+          `Utente '${u?.username || u?.email || uid}' eliminato definitivamente e registrato in utenti_eliminati per bonifica backup.`
+        );
 
         await addAuditLog({
           azione: "ELIMINAZIONE_UTENTE",
           targetTipo: "utente",
           targetId: uid,
-          dettagli: `Utente '${u?.username || u?.email || uid}' rimosso dal database. Motivo: ${motivo || "Nessun motivo specificato"}`,
+          dettagli: `Utente '${u?.username || u?.email || uid}' rimosso dal database e registrato per bonifica backup. Motivo: ${motivo || "Nessun motivo specificato"}`,
           diffPrima: { username: u?.username, email: u?.email, stato: u?.stato, isEnte: u?.isEnte },
           diffDopo: null,
         });
@@ -934,7 +1092,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
     },
-    [users, addAuditLog, notify, rtdb]
+    [users, adminEmail, addAuditLog, notify, rtdb]
   );
 
   // 6. Approve Organizer Request — mirrors EventoRepository.accettaRichiestaOrganizzatore
@@ -2113,7 +2271,13 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         featureFlags,
         analytics,
         onlineUsersCount,
+        deletedUsersCount,
+        reviewsStats,
+        chatsCount,
+        communitiesCount,
+        bozzeCount,
         toggleBooster,
+        setEventBooster,
         toggleOscurato,
         saveEventEdit,
         deleteEvent,

@@ -22,6 +22,8 @@ export function Sidebar() {
   const {
     activeTab,
     setActiveTab,
+    events,
+    users,
     reports,
     organizerRequests,
     rejectedEvents,
@@ -49,8 +51,20 @@ export function Sidebar() {
 
   const navItems = [
     { id: "dashboard", label: "Dashboard Cockpit", icon: LayoutDashboard },
-    { id: "users", label: "Gestione Utenti", icon: Users },
-    { id: "events", label: "Gestione Eventi", icon: CalendarDays },
+    {
+      id: "users",
+      label: "Gestione Utenti",
+      icon: Users,
+      badge: users.length > 0 ? users.length : null,
+      badgeColor: "bg-blue-600/70 text-blue-100",
+    },
+    {
+      id: "events",
+      label: "Gestione Eventi",
+      icon: CalendarDays,
+      badge: events.length > 0 ? events.length : null,
+      badgeColor: "bg-amber-600/70 text-amber-100",
+    },
     {
       id: "organizers",
       label: "Organizzatori & Enti",

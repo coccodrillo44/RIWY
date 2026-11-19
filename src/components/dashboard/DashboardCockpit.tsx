@@ -28,6 +28,11 @@ import {
   Sparkles,
   AlertCircle,
   FolderKanban,
+  Star,
+  MessageSquare,
+  MessagesSquare,
+  FileText,
+  ShieldAlert,
 } from "lucide-react";
 import { CategoriaDB } from "@/types";
 import { getCategoryBadgeClass, formatDate, formatEventDate, isBoostAttivo, isEventoPassato, normalizeCategory } from "@/lib/utils";
@@ -54,6 +59,12 @@ export function DashboardCockpit() {
     auditLogs,
     analytics,
     onlineUsersCount,
+    deletedUsersCount,
+    reviewsStats,
+    chatsCount,
+    communitiesCount,
+    bozzeCount,
+    rejectedEvents,
     setActiveTab,
     toggleBooster,
     navigateToEventsWithCategory,
@@ -375,7 +386,7 @@ export function DashboardCockpit() {
             </span>
           </div>
           <p className="mt-1 text-xs text-slate-500 group-hover:text-slate-400 transition">
-            Account registrati
+            {users.filter((u) => !u.sospeso && u.stato !== "sospeso" && u.stato !== "bannato").length} attivi · {deletedUsersCount} eliminati (tombstone)
           </p>
         </div>
 
@@ -411,7 +422,7 @@ export function DashboardCockpit() {
             </div>
           </div>
           <p className="mt-1 text-xs text-slate-500 group-hover:text-slate-400 transition">
-            {activeEvents.length} visibili · {pastEvents.length} nello storico
+            {activeEvents.length} visibili · {pastEvents.length} nello storico · {events.filter((e) => e.accessibileDisabili).length} accessibili
           </p>
         </div>
 
@@ -446,7 +457,7 @@ export function DashboardCockpit() {
             </div>
           </div>
           <p className="mt-1 text-xs text-slate-500 group-hover:text-slate-400 transition">
-            {organizers.filter((o) => o.verificato).length} verificati con badge
+            {organizers.filter((o) => o.verificato).length} verificati · {organizers.filter((o) => o.sospeso).length} sospesi
           </p>
         </div>
 
@@ -481,8 +492,99 @@ export function DashboardCockpit() {
             </div>
           </div>
           <p className="mt-1 text-xs text-slate-500 group-hover:text-slate-400 transition">
-            Ticket inviati dagli utenti
+            {reports.filter((r) => r.stato === "risolto").length} risolte su {reports.length} ticket
           </p>
+        </div>
+      </div>
+
+      {/* Second Row: Detailed Ecosystem Stats & Counters */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        {/* Recensioni */}
+        <div className="p-3 rounded-xl bg-[#0f172a] border border-[#1e293b] space-y-1">
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-[10px] uppercase font-bold tracking-wider">Recensioni</span>
+            <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400/20" />
+          </div>
+          <div className="flex items-baseline justify-between">
+            <span className="text-lg font-bold text-white">{reviewsStats.total}</span>
+            <span className="text-xs font-semibold text-amber-400">★ {reviewsStats.average}</span>
+          </div>
+          <p className="text-[10px] text-slate-500 truncate">Feedback utenti</p>
+        </div>
+
+        {/* Chat attive */}
+        <div className="p-3 rounded-xl bg-[#0f172a] border border-[#1e293b] space-y-1">
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-[10px] uppercase font-bold tracking-wider">Canali Chat</span>
+            <MessageSquare className="w-3.5 h-3.5 text-sky-400" />
+          </div>
+          <div className="flex items-baseline justify-between">
+            <span className="text-lg font-bold text-white">{chatsCount}</span>
+            <span className="text-[10px] text-sky-400 font-medium">Conversazioni</span>
+          </div>
+          <p className="text-[10px] text-slate-500 truncate">Utente ↔ Ente</p>
+        </div>
+
+        {/* Communities */}
+        <div className="p-3 rounded-xl bg-[#0f172a] border border-[#1e293b] space-y-1">
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-[10px] uppercase font-bold tracking-wider">Community</span>
+            <MessagesSquare className="w-3.5 h-3.5 text-purple-400" />
+          </div>
+          <div className="flex items-baseline justify-between">
+            <span className="text-lg font-bold text-white">{communitiesCount}</span>
+            <span className="text-[10px] text-purple-400 font-medium">Bacheche</span>
+          </div>
+          <p className="text-[10px] text-slate-500 truncate">Stanze territoriali</p>
+        </div>
+
+        {/* Bozze Organizzatori */}
+        <div className="p-3 rounded-xl bg-[#0f172a] border border-[#1e293b] space-y-1">
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-[10px] uppercase font-bold tracking-wider">Bozze Eventi</span>
+            <FileText className="w-3.5 h-3.5 text-indigo-400" />
+          </div>
+          <div className="flex items-baseline justify-between">
+            <span className="text-lg font-bold text-white">{bozzeCount}</span>
+            <span className="text-[10px] text-indigo-400 font-medium">In lavorazione</span>
+          </div>
+          <p className="text-[10px] text-slate-500 truncate">Salvate dagli enti</p>
+        </div>
+
+        {/* Utenti Eliminati (Tombstone) */}
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setActiveTab("users")}
+          className="p-3 rounded-xl bg-[#0f172a] border border-[#1e293b] hover:border-red-500/40 transition cursor-pointer space-y-1"
+        >
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-[10px] uppercase font-bold tracking-wider">Tombstone DR</span>
+            <Trash2 className="w-3.5 h-3.5 text-red-400" />
+          </div>
+          <div className="flex items-baseline justify-between">
+            <span className="text-lg font-bold text-white">{deletedUsersCount}</span>
+            <span className="text-[10px] text-red-400 font-medium">GDPR Oblio</span>
+          </div>
+          <p className="text-[10px] text-slate-500 truncate">Bonifica backup</p>
+        </div>
+
+        {/* Moderazione Respinti */}
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setActiveTab("ai_moderation")}
+          className="p-3 rounded-xl bg-[#0f172a] border border-[#1e293b] hover:border-rose-500/40 transition cursor-pointer space-y-1"
+        >
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-[10px] uppercase font-bold tracking-wider">AI Shield</span>
+            <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+          </div>
+          <div className="flex items-baseline justify-between">
+            <span className="text-lg font-bold text-white">{rejectedEvents.length}</span>
+            <span className="text-[10px] text-rose-400 font-medium">{rejectedEvents.filter((r) => !r.letto).length} da esaminare</span>
+          </div>
+          <p className="text-[10px] text-slate-500 truncate">Eventi respinti</p>
         </div>
       </div>
 

@@ -19,7 +19,7 @@ import {
 import { formatDate } from "@/lib/utils";
 
 export function UsersManager() {
-  const { users, updateUserStatus, deleteUser } = useAdmin();
+  const { users, updateUserStatus, deleteUser, deletedUsersCount } = useAdmin();
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -29,6 +29,8 @@ export function UsersManager() {
     action: "shadowbanned" | "sospeso" | "elimina";
   } | null>(null);
   const [motivoEliminazione, setMotivoEliminazione] = useState("");
+  const [showManualUidModal, setShowManualUidModal] = useState(false);
+  const [manualUidInput, setManualUidInput] = useState("");
 
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
@@ -66,6 +68,20 @@ export function UsersManager() {
     });
   }, [users, searchTerm, roleFilter, statusFilter]);
 
+  const stats = useMemo(() => {
+    let attivi = 0;
+    let sospesi = 0;
+    let shadow = 0;
+    let enti = 0;
+    users.forEach((u) => {
+      if (u.isEnte) enti++;
+      if (u.stato === "shadowbanned") shadow++;
+      if (u.sospeso || u.stato === "sospeso" || u.stato === "bannato") sospesi++;
+      else attivi++;
+    });
+    return { attivi, sospesi, shadow, enti };
+  }, [users]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -78,8 +94,24 @@ export function UsersManager() {
             Dati in tempo reale degli utenti registrati su Rook tramite Firebase Auth & Realtime Database.
           </p>
         </div>
-        <div className="text-xs text-slate-400">
-          Iscritti trovati: <strong className="text-amber-400">{filteredUsers.length}</strong> su {users.length}
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="px-2.5 py-1 rounded-lg bg-[#141d2e] border border-slate-800 text-slate-300">
+            Totale: <strong className="text-white">{users.length}</strong>
+          </span>
+          <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300">
+            Attivi: <strong>{stats.attivi}</strong>
+          </span>
+          <span className="px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300">
+            Sospesi: <strong>{stats.sospesi}</strong>
+          </span>
+          {stats.shadow > 0 && (
+            <span className="px-2.5 py-1 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-300">
+              Shadowban: <strong>{stats.shadow}</strong>
+            </span>
+          )}
+          <span className="px-2.5 py-1 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300">
+            Eliminati (Tombstone): <strong>{deletedUsersCount}</strong>
+          </span>
         </div>
       </div>
 
@@ -96,7 +128,7 @@ export function UsersManager() {
           />
         </div>
 
-        <div className="flex gap-2 text-xs">
+        <div className="flex flex-wrap gap-2 text-xs items-center">
           <select
             value={roleFilter}
             onChange={(e) => setRoleFilter(e.target.value)}
@@ -118,6 +150,20 @@ export function UsersManager() {
             <option value="online">Online ora (10 min)</option>
             <option value="shadowbanned">Shadowbanned (Silenzioso)</option>
           </select>
+
+          <button
+            type="button"
+            onClick={() => {
+              setManualUidInput("");
+              setMotivoEliminazione("");
+              setShowManualUidModal(true);
+            }}
+            className="px-3 py-2 rounded-lg bg-red-600/15 border border-red-500/30 text-red-400 hover:bg-red-600/25 flex items-center space-x-1.5 transition text-xs font-semibold shrink-0"
+            title="Elimina definitivamente un utente specificando il suo UID"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Elimina per UID</span>
+          </button>
         </div>
       </div>
 
@@ -474,6 +520,99 @@ export function UsersManager() {
                   : confirmModal.action === "elimina"
                   ? "Elimina Definitivamente"
                   : "Rimuovi Accesso"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manual UID Delete Modal */}
+      {showManualUidModal && (
+        <div className="fixed inset-0 bg-black/75 flex items-center justify-center p-4 z-50 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-[#0f172a] border border-red-500/40 rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl">
+            <div className="flex items-start space-x-3.5">
+              <div className="p-3 rounded-xl bg-red-600/20 text-red-400 border border-red-500/40 shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-bold text-white tracking-tight">
+                  Elimina Utente per UID
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Rimuove direttamente l&apos;UID da Firebase RTDB e lo registra in utenti_eliminati per la bonifica dei backup di Disaster Recovery.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">
+                  UID Utente Firebase *
+                </label>
+                <input
+                  type="text"
+                  placeholder="Es. d1F5g8H2k9L0mP4qRsTuVwXyZ..."
+                  value={manualUidInput}
+                  onChange={(e) => setManualUidInput(e.target.value.trim())}
+                  className="w-full bg-[#141d2e] border border-slate-700 rounded-lg p-2.5 text-white font-mono placeholder-slate-500 focus:outline-none focus:border-red-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">
+                  Motivo Eliminazione (per Audit Log)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Es. Richiesta utente via email / account orfano"
+                  value={motivoEliminazione}
+                  onChange={(e) => setMotivoEliminazione(e.target.value)}
+                  className="w-full bg-[#141d2e] border border-slate-700 rounded-lg p-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-red-500"
+                />
+              </div>
+
+              <div className="p-3 bg-red-950/20 border border-red-500/20 rounded-xl text-[11px] text-red-300 space-y-1">
+                <p className="font-semibold text-red-200">Effetti immediati dell&apos;operazione:</p>
+                <ul className="list-disc pl-4 space-y-0.5 text-slate-400">
+                  <li>Eliminazione nodo profilo da <code>/utenti/{`{uid}`}</code></li>
+                  <li>Pulizia di preferiti, organizzatori seguiti e bozze</li>
+                  <li>Iscrizione permanente nel registro <code>/utenti_eliminati/{`{uid}`}</code> (GDPR Art. 17)</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end space-x-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowManualUidModal(false);
+                  setManualUidInput("");
+                  setMotivoEliminazione("");
+                }}
+                className="px-4 py-2 rounded-xl bg-[#1e293b] hover:bg-[#283548] text-slate-300 font-semibold text-xs transition"
+              >
+                Annulla
+              </button>
+              <button
+                type="button"
+                disabled={!manualUidInput}
+                onClick={async () => {
+                  if (!manualUidInput) return;
+                  const uid = manualUidInput;
+                  setShowManualUidModal(false);
+                  const existingUser = users.find((x) => x.firebaseUid === uid) || {
+                    firebaseUid: uid,
+                    email: "N/D",
+                    username: `Utente (${uid.slice(0, 8)}...)`,
+                  };
+                  setConfirmModal({
+                    user: existingUser as UtenteDB,
+                    action: "elimina",
+                  });
+                }}
+                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:pointer-events-none text-white font-bold text-xs transition shadow-lg shadow-red-600/30"
+              >
+                Procedi con Eliminazione
               </button>
             </div>
           </div>
