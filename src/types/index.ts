@@ -424,3 +424,41 @@ export const DEFAULT_CATEGORIE_LIST: CategoriaDB[] = [
     sottocategorie: ["Salute", "Sociale", "Volontariato", "Salute & Sociale"],
   },
 ];
+
+export interface ReviewsStats {
+  total: number;
+  average: string;
+}
+
+export interface SystemCounters {
+  totalUsers: number;
+  activeUsers: number;
+  suspendedUsers: number;
+  shadowbannedUsers: number;
+  deletedUsers: number;
+  onlineUsers: number;
+  guestsCount: number;
+
+  totalEvents: number;
+  activeEvents: number;
+  pastEvents: number;
+  boostedEvents: number;
+  accessibleEvents: number;
+  vegEvents: number;
+  rejectedEvents: number;
+
+  totalOrganizers: number;
+  verifiedOrganizers: number;
+  pendingRequests: number;
+  suspendedOrganizers: number;
+
+  totalReviews: number;
+  averageRating: string;
+  totalChats: number;
+  totalCommunities: number;
+  totalBozze: number;
+
+  totalReports: number;
+  pendingReports: number;
+  resolvedReports: number;
+}
