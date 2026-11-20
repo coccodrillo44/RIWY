@@ -27,6 +27,7 @@ import {
   CategoriaDB,
   DEFAULT_CATEGORIE_LIST,
   ReviewsStats,
+  CommunityDB,
 } from "@/types";
 import {
   auth,
@@ -97,6 +98,7 @@ interface AdminContextType {
   reviewsStats: ReviewsStats;
   chatsCount: number;
   communitiesCount: number;
+  communities: CommunityDB[];
   bozzeCount: number;
   // Actions
   toggleBooster: (eventId: string) => Promise<void>;
@@ -277,6 +279,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   const [reviewsStats, setReviewsStats] = useState<ReviewsStats>({ total: 0, average: "0.0" });
   const [chatsCount, setChatsCount] = useState<number>(0);
   const [communitiesCount, setCommunitiesCount] = useState<number>(0);
+  const [communities, setCommunities] = useState<CommunityDB[]>([]);
   const [bozzeCount, setBozzeCount] = useState<number>(0);
 
   const notify = useCallback((type: ToastMessage["type"], text: string) => {
@@ -373,6 +376,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       setReviewsStats({ total: 0, average: "0.0" });
       setChatsCount(0);
       setCommunitiesCount(0);
+      setCommunities([]);
       setBozzeCount(0);
       setIsLiveConnected(false);
       return;
@@ -782,12 +786,33 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
           ref(rtdb, "communities"),
           (snap) => {
             if (snap.exists()) {
-              setCommunitiesCount(Object.keys(snap.val() as Record<string, any>).length);
+              const val = snap.val() as Record<string, any>;
+              const list: CommunityDB[] = Object.entries(val).map(([key, item]) => {
+                const raw = typeof item === "object" && item !== null ? item : {};
+                const membri = (raw.membri && typeof raw.membri === "object") ? raw.membri : {};
+                const membersCount = Object.keys(membri).length;
+                return {
+                  idCommunity: raw.idCommunity || key,
+                  idOrganizzatore: raw.idOrganizzatore || "",
+                  nomeOrganizzatore: raw.nomeOrganizzatore || "",
+                  nomeCommunity: raw.nomeCommunity || "",
+                  logoOrganizzatore: raw.logoOrganizzatore || "",
+                  dataCreazione: raw.dataCreazione,
+                  membri: membri,
+                  membersCount: membersCount,
+                };
+              });
+              setCommunities(list);
+              setCommunitiesCount(list.length);
             } else {
+              setCommunities([]);
               setCommunitiesCount(0);
             }
           },
-          () => setCommunitiesCount(0)
+          () => {
+            setCommunities([]);
+            setCommunitiesCount(0);
+          }
         )
       );
 
@@ -2275,6 +2300,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         reviewsStats,
         chatsCount,
         communitiesCount,
+        communities,
         bozzeCount,
         toggleBooster,
         setEventBooster,
