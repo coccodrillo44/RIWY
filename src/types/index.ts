@@ -374,7 +374,7 @@ export const DEFAULT_CATEGORIE_LIST: CategoriaDB[] = [
     nome_it: "Fiere & Mercati",
     nome_en: "Fairs & Markets",
     icon_key: "storefront",
-    color_hex: "#D97706",
+    color_hex: "#EAB308",
     ordine: 6,
     attivo: true,
     sottocategorie: ["Fiere e Mercati", "Fiere & Mercati"],

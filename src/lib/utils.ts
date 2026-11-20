@@ -206,7 +206,7 @@ export function getCategoryBadgeClass(category: string | undefined): string {
     case "Famiglia & Bambini":
       return "bg-pink-500/15 text-pink-400 border-pink-500/30";
     case "Fiere & Mercati":
-      return "bg-orange-500/15 text-orange-400 border-orange-500/30";
+      return "bg-yellow-500/15 text-yellow-400 border-yellow-500/30";
     case "Nuove Aperture":
       return "bg-cyan-500/15 text-cyan-400 border-cyan-500/30";
     case "Sconti & Promozioni":
