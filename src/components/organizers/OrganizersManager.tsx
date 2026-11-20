@@ -29,7 +29,13 @@ import {
   Plus,
   Check,
   ChevronDown,
+  ChevronUp,
   X,
+  Calendar,
+  BarChart2,
+  TrendingUp,
+  Trophy,
+  Crown,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
@@ -89,6 +95,8 @@ export function OrganizersManager() {
   const {
     organizers,
     organizerRequests,
+    events,
+    communities,
     approveOrganizerRequest,
     rejectOrganizerRequest,
     sendChatMessageToEnte,
@@ -131,6 +139,111 @@ export function OrganizersManager() {
       (o) => !o.stato || o.stato === "IN_ATTESA" || o.stato === "IN_ATTESA_VERIFICA_EMAIL"
     );
   }, [organizerRequests]);
+
+  const [showDetailedStats, setShowDetailedStats] = useState(true);
+
+  const orgStats = useMemo(() => {
+    const totalOrgs = organizers.length;
+
+    // 1. Divisione per province
+    const provinceCounts: Record<string, number> = {};
+    let verificatiCount = 0;
+    let conLogoCount = 0;
+    let conSocialCount = 0;
+    let sospesiCount = 0;
+
+    organizers.forEach((org) => {
+      const prov = org.provinciaEnte?.trim();
+      if (prov) {
+        provinceCounts[prov] = (provinceCounts[prov] || 0) + 1;
+      } else {
+        provinceCounts["Non specificata"] = (provinceCounts["Non specificata"] || 0) + 1;
+      }
+
+      if (org.verificato) verificatiCount++;
+      if (org.logoEnte && org.logoEnte.trim().length > 0) conLogoCount++;
+      if (org.instagram || org.facebook || org.tiktok || org.linkedin || org.sitoWeb) conSocialCount++;
+      if (org.sospeso) sospesiCount++;
+    });
+
+    const sortedProvinces = Object.entries(provinceCounts).sort((a, b) => b[1] - a[1]);
+
+    // 2. Numero di eventi per organizzatore
+    const eventsByOrg: Record<string, number> = {};
+    organizers.forEach((org) => {
+      eventsByOrg[org.idEnte] = 0;
+    });
+
+    let totalEventsFromRegisteredOrgs = 0;
+
+    events.forEach((ev) => {
+      const matchingOrg = organizers.find(
+        (o) =>
+          (ev.idOrganizzatore &&
+            (o.idEnte.toLowerCase() === ev.idOrganizzatore.toLowerCase() ||
+              (o.idCreatore && o.idCreatore.toLowerCase() === ev.idOrganizzatore.toLowerCase()))) ||
+          (ev.organizzatore && o.nomeEnte && o.nomeEnte.toLowerCase() === ev.organizzatore.toLowerCase())
+      );
+
+      if (matchingOrg) {
+        eventsByOrg[matchingOrg.idEnte] = (eventsByOrg[matchingOrg.idEnte] || 0) + 1;
+        totalEventsFromRegisteredOrgs++;
+      }
+    });
+
+    const orgsWithEvents = organizers
+      .map((org) => ({
+        org,
+        eventCount: eventsByOrg[org.idEnte] || 0,
+      }))
+      .sort((a, b) => b.eventCount - a.eventCount);
+
+    const avgEventsPerOrg = totalOrgs > 0 ? (totalEventsFromRegisteredOrgs / totalOrgs).toFixed(1) : "0.0";
+    const orgsWithAtLeastOneEvent = orgsWithEvents.filter((item) => item.eventCount > 0).length;
+
+    // 3. Chi ha community con più iscritti
+    const enrichedCommunities = (communities || [])
+      .map((comm) => {
+        const matchingOrg = organizers.find(
+          (o) =>
+            (comm.idOrganizzatore &&
+              (o.idEnte.toLowerCase() === comm.idOrganizzatore.toLowerCase() ||
+                (o.idCreatore && o.idCreatore.toLowerCase() === comm.idOrganizzatore.toLowerCase()))) ||
+            (comm.nomeOrganizzatore && o.nomeEnte && o.nomeEnte.toLowerCase() === comm.nomeOrganizzatore.toLowerCase())
+        );
+        const membersCount = comm.membersCount || (comm.membri ? Object.keys(comm.membri).length : 0);
+        return {
+          comm,
+          matchingOrg,
+          membersCount,
+        };
+      })
+      .sort((a, b) => b.membersCount - a.membersCount);
+
+    const topCommunity = enrichedCommunities[0] || null;
+    const totalCommunityMembers = enrichedCommunities.reduce((acc, c) => acc + c.membersCount, 0);
+    const avgMembersPerCommunity =
+      enrichedCommunities.length > 0 ? Math.round(totalCommunityMembers / enrichedCommunities.length) : 0;
+
+    return {
+      totalOrgs,
+      verificatiCount,
+      conLogoCount,
+      conSocialCount,
+      sospesiCount,
+      pendingCount: pendingRequests.length,
+      sortedProvinces,
+      totalEventsFromRegisteredOrgs,
+      avgEventsPerOrg,
+      orgsWithAtLeastOneEvent,
+      topOrgsByEvents: orgsWithEvents.slice(0, 5),
+      topCommunity,
+      topCommunities: enrichedCommunities.slice(0, 5),
+      totalCommunityMembers,
+      avgMembersPerCommunity,
+      totalCommunitiesCount: communities ? communities.length : 0,
+    };
+  }, [organizers, events, communities, pendingRequests]);
 
   const handleConfirmReject = () => {
     if (!rejectId) return;
@@ -189,13 +302,324 @@ export function OrganizersManager() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-white tracking-tight">
-          Gestione Organizzatori & Enti
-        </h1>
-        <p className="text-sm text-slate-400">
-          Dati in tempo reale degli enti registrati e richieste in attesa di approvazione per l&apos;app Rook.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white tracking-tight">
+            Gestione Organizzatori & Enti
+          </h1>
+          <p className="text-sm text-slate-400">
+            Dati in tempo reale degli enti registrati e richieste in attesa di approvazione per l&apos;app Rook.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="px-2.5 py-1 rounded-lg bg-[#141d2e] border border-slate-800 text-slate-300">
+            Totale Enti: <strong className="text-white">{orgStats.totalOrgs}</strong>
+          </span>
+          <span className="px-2.5 py-1 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-300">
+            Verificati: <strong>{orgStats.verificatiCount}</strong>
+          </span>
+          {orgStats.pendingCount > 0 && (
+            <span className="px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300">
+              In Attesa: <strong>{orgStats.pendingCount}</strong>
+            </span>
+          )}
+          <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300">
+            Community: <strong>{orgStats.totalCommunitiesCount}</strong>
+          </span>
+        </div>
+      </div>
+
+      {/* Sezione Statistiche Enti */}
+      <div className="rounded-2xl bg-[#0f172a] border border-[#1e293b] overflow-hidden shadow-xl">
+        <div className="px-5 py-3.5 bg-gradient-to-r from-[#141d2e] via-[#0f172a] to-[#141d2e] border-b border-[#1e293b] flex items-center justify-between">
+          <div className="flex items-center space-x-2.5">
+            <div className="p-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400">
+              <BarChart2 className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
+                Statistiche Organizzatori & Community
+                <span className="text-[11px] font-normal text-slate-400">
+                  (Province, eventi per organizzatore e community più seguite)
+                </span>
+              </h2>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowDetailedStats(!showDetailedStats)}
+            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white px-2.5 py-1 rounded-lg bg-slate-800/40 hover:bg-slate-800 transition-colors border border-slate-700/50"
+          >
+            <span>{showDetailedStats ? "Comprimi" : "Espandi"}</span>
+            {showDetailedStats ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+
+        {showDetailedStats && (
+          <div className="p-5 space-y-5">
+            {/* 4 KPI Cards Rapide */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Card 1: Totale Enti */}
+              <div className="p-4 rounded-xl bg-[#141d2e]/80 border border-slate-800/80 flex flex-col justify-between">
+                <div className="flex items-center justify-between text-slate-400 mb-2">
+                  <span className="text-xs font-medium">Enti Registrati</span>
+                  <Building2 className="w-4 h-4 text-blue-400" />
+                </div>
+                <div className="text-2xl font-black text-white">{orgStats.totalOrgs}</div>
+                <div className="mt-2 pt-2 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+                  <span>Verificati (Blu): <strong className="text-blue-300">{orgStats.verificatiCount}</strong></span>
+                  <span className="text-slate-600">•</span>
+                  <span>In Attesa: <strong className="text-amber-300">{orgStats.pendingCount}</strong></span>
+                </div>
+              </div>
+
+              {/* Card 2: Eventi per Organizzatore */}
+              <div className="p-4 rounded-xl bg-[#141d2e]/80 border border-slate-800/80 flex flex-col justify-between">
+                <div className="flex items-center justify-between text-slate-400 mb-2">
+                  <span className="text-xs font-medium">Eventi per Organizzatore</span>
+                  <Calendar className="w-4 h-4 text-amber-400" />
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-black text-amber-400">{orgStats.avgEventsPerOrg}</span>
+                  <span className="text-xs text-slate-400">media eventi/ente</span>
+                </div>
+                <div className="mt-2 pt-2 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+                  <span>Totale: <strong className="text-white">{orgStats.totalEventsFromRegisteredOrgs}</strong></span>
+                  <span className="text-slate-600">•</span>
+                  <span>Attivi con eventi: <strong className="text-amber-300">{orgStats.orgsWithAtLeastOneEvent}</strong></span>
+                </div>
+              </div>
+
+              {/* Card 3: Iscritti Community */}
+              <div className="p-4 rounded-xl bg-[#141d2e]/80 border border-slate-800/80 flex flex-col justify-between">
+                <div className="flex items-center justify-between text-slate-400 mb-2">
+                  <span className="text-xs font-medium">Community & Iscritti</span>
+                  <Users className="w-4 h-4 text-emerald-400" />
+                </div>
+                <div className="text-2xl font-black text-emerald-400">
+                  {orgStats.totalCommunityMembers}
+                  <span className="text-xs font-normal text-slate-400 ml-1.5">iscritti totali</span>
+                </div>
+                <div className="mt-2 pt-2 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+                  <span>Community: <strong className="text-emerald-300">{orgStats.totalCommunitiesCount}</strong></span>
+                  <span className="text-slate-600">•</span>
+                  <span>Media iscritti: <strong className="text-slate-200">{orgStats.avgMembersPerCommunity}</strong></span>
+                </div>
+              </div>
+
+              {/* Card 4: Presenza Digitale */}
+              <div className="p-4 rounded-xl bg-[#141d2e]/80 border border-slate-800/80 flex flex-col justify-between">
+                <div className="flex items-center justify-between text-slate-400 mb-2">
+                  <span className="text-xs font-medium">Presenza Digitale</span>
+                  <Sparkles className="w-4 h-4 text-purple-400" />
+                </div>
+                <div className="text-2xl font-black text-purple-300">
+                  {orgStats.totalOrgs > 0 ? Math.round((orgStats.conSocialCount / orgStats.totalOrgs) * 100) : 0}%
+                  <span className="text-xs font-normal text-slate-400 ml-1.5">con social/web</span>
+                </div>
+                <div className="mt-2 pt-2 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+                  <span>Con Logo: <strong className="text-slate-200">{orgStats.conLogoCount}</strong></span>
+                  <span className="text-slate-600">•</span>
+                  <span>Sospesi: <strong className="text-red-400">{orgStats.sospesiCount}</strong></span>
+                </div>
+              </div>
+            </div>
+
+            {/* 3 Pannelli Dettagliati: Province, Eventi per Org, Community Più Iscritte */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+              {/* Pannello 1: Divisione per Province */}
+              <div className="p-4 rounded-xl bg-[#141d2e]/60 border border-slate-800 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-800/80 mb-3">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-amber-400" />
+                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                        Divisione Enti per Provincia
+                      </h3>
+                    </div>
+                    <span className="text-[11px] text-slate-400">
+                      {orgStats.totalOrgs} enti
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-slate-400 mb-3">
+                    Distribuzione degli enti accreditati per provincia della Toscana.
+                  </p>
+
+                  <div className="space-y-2.5 max-h-[260px] overflow-y-auto pr-1">
+                    {orgStats.sortedProvinces.length === 0 ? (
+                      <p className="text-xs text-slate-500 py-4 text-center">Nessun ente presente</p>
+                    ) : (
+                      orgStats.sortedProvinces.map(([prov, count]) => {
+                        const pct = orgStats.totalOrgs > 0 ? Math.round((count / orgStats.totalOrgs) * 100) : 0;
+                        return (
+                          <div
+                            key={prov}
+                            className="p-2 rounded-lg bg-[#0f172a]/70 border border-slate-800/60"
+                          >
+                            <div className="flex items-center justify-between text-xs mb-1">
+                              <span className="font-semibold text-slate-200 flex items-center gap-1.5">
+                                <span className={`w-2 h-2 rounded-full ${prov === "Non specificata" ? "bg-slate-600" : "bg-amber-400"}`} />
+                                {prov}
+                              </span>
+                              <span className="text-slate-400 font-mono text-[11px]">
+                                <strong className="text-white">{count}</strong> ent{count === 1 ? "e" : "i"} ({pct}%)
+                              </span>
+                            </div>
+                            <div className="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all duration-500 ${
+                                  prov === "Non specificata" ? "bg-slate-600" : "bg-gradient-to-r from-amber-500 to-amber-300"
+                                }`}
+                                style={{ width: `${Math.max(pct, 4)}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-3 pt-3 border-t border-slate-800/80 text-[11px] text-slate-400 flex items-center justify-between">
+                  <span>Territorio Toscano</span>
+                  <span>Province coperte: <strong className="text-white">{orgStats.sortedProvinces.filter(([p]) => p !== "Non specificata").length}</strong></span>
+                </div>
+              </div>
+
+              {/* Pannello 2: Numero di Eventi per Organizzatore */}
+              <div className="p-4 rounded-xl bg-[#141d2e]/60 border border-slate-800 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-800/80 mb-3">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-blue-400" />
+                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                        Eventi per Organizzatore
+                      </h3>
+                    </div>
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      Media: {orgStats.avgEventsPerOrg}
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-slate-400 mb-3">
+                    Classifica degli organizzatori con il maggior numero di eventi pubblicati.
+                  </p>
+
+                  <div className="space-y-2.5 max-h-[260px] overflow-y-auto pr-1">
+                    {orgStats.topOrgsByEvents.length === 0 ? (
+                      <p className="text-xs text-slate-500 py-4 text-center">Nessun evento associato ad enti</p>
+                    ) : (
+                      orgStats.topOrgsByEvents.map((item, idx) => {
+                        const maxCount = orgStats.topOrgsByEvents[0]?.eventCount || 1;
+                        const pct = Math.round((item.eventCount / (maxCount || 1)) * 100);
+                        return (
+                          <div
+                            key={item.org.idEnte}
+                            className="p-2 rounded-lg bg-[#0f172a]/70 border border-slate-800/60"
+                          >
+                            <div className="flex items-center justify-between text-xs mb-1">
+                              <span className="font-semibold text-slate-200 flex items-center gap-1.5 truncate max-w-[180px]">
+                                <span className="text-[10px] font-mono text-slate-500 w-3">#{idx + 1}</span>
+                                {item.org.nomeEnte || "Senza nome"}
+                                {item.org.verificato && (
+                                  <BadgeCheck className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                                )}
+                              </span>
+                              <span className="text-slate-400 font-mono text-[11px] shrink-0">
+                                <strong className="text-white">{item.eventCount}</strong> event{item.eventCount === 1 ? "o" : "i"}
+                              </span>
+                            </div>
+                            <div className="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className="h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-400 transition-all duration-500"
+                                style={{ width: `${Math.max(pct, item.eventCount > 0 ? 5 : 0)}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-3 pt-3 border-t border-slate-800/80 text-[11px] text-slate-400 flex items-center justify-between">
+                  <span>Attivi con eventi: <strong className="text-emerald-400">{orgStats.orgsWithAtLeastOneEvent}</strong></span>
+                  <span>Senza eventi: <strong className="text-slate-500">{orgStats.totalOrgs - orgStats.orgsWithAtLeastOneEvent}</strong></span>
+                </div>
+              </div>
+
+              {/* Pannello 3: Chi ha Community con più Iscritti */}
+              <div className="p-4 rounded-xl bg-[#141d2e]/60 border border-slate-800 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-800/80 mb-3">
+                    <div className="flex items-center gap-2">
+                      <Trophy className="w-4 h-4 text-emerald-400" />
+                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                        Community con Più Iscritti
+                      </h3>
+                    </div>
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      Top Community
+                    </span>
+                  </div>
+
+                  {/* Spotlight Top #1 Community */}
+                  {orgStats.topCommunity ? (
+                    <div className="p-3 mb-3 rounded-xl bg-gradient-to-r from-emerald-500/15 via-[#0f172a] to-transparent border border-emerald-500/30">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1">
+                          <Crown className="w-3.5 h-3.5 text-amber-400" />
+                          Community #1 per Iscritti
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold text-[11px] border border-emerald-500/30">
+                          {orgStats.topCommunity.membersCount} iscritt{orgStats.topCommunity.membersCount === 1 ? "o" : "i"}
+                        </span>
+                      </div>
+                      <h4 className="text-sm font-bold text-white truncate">
+                        {orgStats.topCommunity.comm.nomeCommunity || `Community di ${orgStats.topCommunity.comm.nomeOrganizzatore || "Organizzatore"}`}
+                      </h4>
+                      <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                        Organizzatore: <span className="text-slate-200 font-medium">{orgStats.topCommunity.comm.nomeOrganizzatore || orgStats.topCommunity.matchingOrg?.nomeEnte || "Non specificato"}</span>
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="p-3 mb-3 rounded-xl bg-[#0f172a] border border-slate-800 text-xs text-slate-500 text-center">
+                      Nessuna community creata
+                    </div>
+                  )}
+
+                  {/* Altre Top Community */}
+                  <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                    {orgStats.topCommunities.slice(1).map((item, idx) => (
+                      <div
+                        key={item.comm.idCommunity}
+                        className="p-2 rounded-lg bg-[#0f172a]/70 border border-slate-800/60 flex items-center justify-between text-xs"
+                      >
+                        <div className="truncate max-w-[180px]">
+                          <div className="font-semibold text-slate-200 truncate flex items-center gap-1.5">
+                            <span className="text-[10px] font-mono text-slate-500">#{idx + 2}</span>
+                            {item.comm.nomeCommunity || item.comm.nomeOrganizzatore || "Community"}
+                          </div>
+                          <div className="text-[10px] text-slate-400 truncate">
+                            {item.comm.nomeOrganizzatore || item.matchingOrg?.nomeEnte || ""}
+                          </div>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-md bg-[#141d2e] border border-slate-700 font-mono text-[11px] text-emerald-400 font-semibold shrink-0">
+                          {item.membersCount} iscritti
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-3 pt-3 border-t border-slate-800/80 text-[11px] text-slate-400 flex items-center justify-between">
+                  <span>Totale Iscritti: <strong className="text-emerald-400">{orgStats.totalCommunityMembers}</strong></span>
+                  <span>Community Create: <strong className="text-white">{orgStats.totalCommunitiesCount}</strong></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Pending Approval Section */}

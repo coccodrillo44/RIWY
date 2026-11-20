@@ -15,6 +15,15 @@ import {
   Mail,
   MapPin,
   Trash2,
+  Users,
+  Activity,
+  Sparkles,
+  Clock,
+  CheckCircle2,
+  TrendingUp,
+  BarChart2,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
@@ -68,18 +77,92 @@ export function UsersManager() {
     });
   }, [users, searchTerm, roleFilter, statusFilter]);
 
+  const [showDetailedStats, setShowDetailedStats] = useState(true);
+
   const stats = useMemo(() => {
+    const total = users.length;
+    const now = Date.now();
+    const ONE_HOUR = 60 * 60 * 1000;
+    const ONE_DAY = 24 * ONE_HOUR;
+    const SEVEN_DAYS = 7 * ONE_DAY;
+    const THIRTY_DAYS = 30 * ONE_DAY;
+
     let attivi = 0;
     let sospesi = 0;
     let shadow = 0;
     let enti = 0;
+    let conAvatar = 0;
+    let conProvincia = 0;
+    let conAlert = 0;
+    let conTelefono = 0;
+
+    // Attività
+    let onlineNow = 0; // < 15 min
+    let activeToday = 0; // < 24h
+    let activeThisWeek = 0; // 24h - 7d
+    let activeThisMonth = 0; // 7d - 30d
+    let inactiveOrNever = 0; // > 30d o mai
+
+    const provinceCounts: Record<string, number> = {};
+
     users.forEach((u) => {
       if (u.isEnte) enti++;
       if (u.stato === "shadowbanned") shadow++;
       if (u.sospeso || u.stato === "sospeso" || u.stato === "bannato") sospesi++;
       else attivi++;
+
+      if (u.avatarId && u.avatarId.trim().length > 0) conAvatar++;
+      if (u.telefonoUser && u.telefonoUser.trim().length > 0) conTelefono++;
+      if (u.paroleChiaveAlert && u.paroleChiaveAlert.length > 0) conAlert++;
+
+      const prov = u.provincia?.trim();
+      if (prov) {
+        conProvincia++;
+        provinceCounts[prov] = (provinceCounts[prov] || 0) + 1;
+      } else {
+        provinceCounts["Non impostata"] = (provinceCounts["Non impostata"] || 0) + 1;
+      }
+
+      const last = Number(u.ultimoAccesso || 0);
+      if (!last || last === 0) {
+        inactiveOrNever++;
+      } else {
+        const diff = now - last;
+        if (diff <= 15 * 60 * 1000) {
+          onlineNow++;
+          activeToday++;
+        } else if (diff <= ONE_DAY) {
+          activeToday++;
+        } else if (diff <= SEVEN_DAYS) {
+          activeThisWeek++;
+        } else if (diff <= THIRTY_DAYS) {
+          activeThisMonth++;
+        } else {
+          inactiveOrNever++;
+        }
+      }
     });
-    return { attivi, sospesi, shadow, enti };
+
+    const sortedProvinces = Object.entries(provinceCounts).sort((a, b) => b[1] - a[1]);
+
+    return {
+      total,
+      attivi,
+      sospesi,
+      shadow,
+      enti,
+      utentiNormali: total - enti,
+      conAvatar,
+      conProvincia,
+      conAlert,
+      conTelefono,
+      onlineNow,
+      activeToday,
+      activeThisWeek,
+      activeThisMonth,
+      inactiveOrNever,
+      sortedProvinces,
+    };
   }, [users]);
 
   return (
@@ -113,6 +196,335 @@ export function UsersManager() {
             Eliminati (Tombstone): <strong>{deletedUsersCount}</strong>
           </span>
         </div>
+      </div>
+
+      {/* Sezione Statistiche Utenti */}
+      <div className="rounded-2xl bg-[#0f172a] border border-[#1e293b] overflow-hidden shadow-xl">
+        <div className="px-5 py-3.5 bg-gradient-to-r from-[#141d2e] via-[#0f172a] to-[#141d2e] border-b border-[#1e293b] flex items-center justify-between">
+          <div className="flex items-center space-x-2.5">
+            <div className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400">
+              <BarChart2 className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
+                Statistiche Utenti Rook
+                <span className="text-[11px] font-normal text-slate-400">
+                  (Ripartizione geografica, attività e profili)
+                </span>
+              </h2>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowDetailedStats(!showDetailedStats)}
+            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white px-2.5 py-1 rounded-lg bg-slate-800/40 hover:bg-slate-800 transition-colors border border-slate-700/50"
+          >
+            <span>{showDetailedStats ? "Comprimi" : "Espandi"}</span>
+            {showDetailedStats ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+
+        {showDetailedStats && (
+          <div className="p-5 space-y-5">
+            {/* 4 KPI Cards Rapide */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Card 1: Totale e Ruoli */}
+              <div className="p-4 rounded-xl bg-[#141d2e]/80 border border-slate-800/80 flex flex-col justify-between">
+                <div className="flex items-center justify-between text-slate-400 mb-2">
+                  <span className="text-xs font-medium">Totale Utenti</span>
+                  <Users className="w-4 h-4 text-blue-400" />
+                </div>
+                <div className="text-2xl font-black text-white">{stats.total}</div>
+                <div className="mt-2 pt-2 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+                  <span>Standard: <strong className="text-slate-200">{stats.utentiNormali}</strong></span>
+                  <span className="text-slate-600">•</span>
+                  <span>Enti/Org: <strong className="text-amber-300">{stats.enti}</strong></span>
+                </div>
+              </div>
+
+              {/* Card 2: Attività Live */}
+              <div className="p-4 rounded-xl bg-[#141d2e]/80 border border-slate-800/80 flex flex-col justify-between">
+                <div className="flex items-center justify-between text-slate-400 mb-2">
+                  <span className="text-xs font-medium">Attività Recente</span>
+                  <Activity className="w-4 h-4 text-emerald-400" />
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-black text-emerald-400">{stats.onlineNow}</span>
+                  <span className="text-xs text-emerald-400/80 font-medium flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block" />
+                    online ora
+                  </span>
+                </div>
+                <div className="mt-2 pt-2 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+                  <span>24 ore: <strong className="text-emerald-300">{stats.activeToday}</strong></span>
+                  <span className="text-slate-600">•</span>
+                  <span>7 giorni: <strong className="text-slate-200">{stats.activeThisWeek}</strong></span>
+                </div>
+              </div>
+
+              {/* Card 3: Profilo & Dati */}
+              <div className="p-4 rounded-xl bg-[#141d2e]/80 border border-slate-800/80 flex flex-col justify-between">
+                <div className="flex items-center justify-between text-slate-400 mb-2">
+                  <span className="text-xs font-medium">Foto & Profilo</span>
+                  <Sparkles className="w-4 h-4 text-purple-400" />
+                </div>
+                <div className="text-2xl font-black text-purple-300">
+                  {stats.total > 0 ? Math.round((stats.conAvatar / stats.total) * 100) : 0}%
+                  <span className="text-xs font-normal text-slate-400 ml-1.5">con avatar</span>
+                </div>
+                <div className="mt-2 pt-2 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+                  <span>Provincia: <strong className="text-slate-200">{stats.conProvincia}</strong></span>
+                  <span className="text-slate-600">•</span>
+                  <span>Alert: <strong className="text-purple-300">{stats.conAlert}</strong></span>
+                </div>
+              </div>
+
+              {/* Card 4: Sicurezza & Account */}
+              <div className="p-4 rounded-xl bg-[#141d2e]/80 border border-slate-800/80 flex flex-col justify-between">
+                <div className="flex items-center justify-between text-slate-400 mb-2">
+                  <span className="text-xs font-medium">Stato Account</span>
+                  <Shield className="w-4 h-4 text-amber-400" />
+                </div>
+                <div className="text-2xl font-black text-white">
+                  {stats.attivi}
+                  <span className="text-xs font-normal text-emerald-400 ml-1.5">
+                    ({stats.total > 0 ? Math.round((stats.attivi / stats.total) * 100) : 0}% attivi)
+                  </span>
+                </div>
+                <div className="mt-2 pt-2 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+                  <span>Sospesi: <strong className="text-amber-400">{stats.sospesi}</strong></span>
+                  <span className="text-slate-600">•</span>
+                  <span>Shadow: <strong className="text-purple-400">{stats.shadow}</strong></span>
+                </div>
+              </div>
+            </div>
+
+            {/* Griglia a 2 Colonne: Divisione per Provincia & Divisione per Attività */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              {/* Colonna 1: Divisione Utenti per Provincia */}
+              <div className="p-4 rounded-xl bg-[#141d2e]/60 border border-slate-800 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-800/80 mb-3">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-amber-400" />
+                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                        Divisione Utenti per Provincia
+                      </h3>
+                    </div>
+                    <span className="text-[11px] text-slate-400">
+                      {stats.conProvincia} impostate su {stats.total}
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-slate-400 mb-3">
+                    Clicca su una provincia per filtrare istantaneamente la tabella sottostante.
+                  </p>
+
+                  <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1">
+                    {stats.sortedProvinces.length === 0 ? (
+                      <p className="text-xs text-slate-500 py-4 text-center">Nessun dato provincia registrato</p>
+                    ) : (
+                      stats.sortedProvinces.map(([prov, count]) => {
+                        const pct = stats.total > 0 ? Math.round((count / stats.total) * 100) : 0;
+                        const isSelected = searchTerm.toLowerCase() === prov.toLowerCase();
+                        return (
+                          <div
+                            key={prov}
+                            onClick={() => {
+                              if (prov === "Non impostata") {
+                                setSearchTerm("");
+                              } else {
+                                setSearchTerm(isSelected ? "" : prov);
+                              }
+                            }}
+                            className={`p-2 rounded-lg cursor-pointer transition-all border ${
+                              isSelected
+                                ? "bg-amber-500/15 border-amber-500/40 shadow-sm"
+                                : "bg-[#0f172a]/70 hover:bg-[#1a253c] border-slate-800/60"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between text-xs mb-1">
+                              <span className="font-semibold text-slate-200 flex items-center gap-1.5">
+                                <span className={`w-2 h-2 rounded-full ${prov === "Non impostata" ? "bg-slate-600" : "bg-amber-400"}`} />
+                                {prov}
+                              </span>
+                              <span className="text-slate-400 font-mono text-[11px]">
+                                <strong className="text-white">{count}</strong> utent{count === 1 ? "e" : "i"} ({pct}%)
+                              </span>
+                            </div>
+                            <div className="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all duration-500 ${
+                                  prov === "Non impostata" ? "bg-slate-600" : "bg-gradient-to-r from-amber-500 to-amber-300"
+                                }`}
+                                style={{ width: `${Math.max(pct, 3)}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
+                  <span>Toscana: 10 province supportate</span>
+                  {searchTerm && (
+                    <button
+                      onClick={() => setSearchTerm("")}
+                      className="text-amber-400 hover:underline text-[11px]"
+                    >
+                      Azzera filtro ({searchTerm})
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Colonna 2: Divisione per Attività nell'App */}
+              <div className="p-4 rounded-xl bg-[#141d2e]/60 border border-slate-800 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-800/80 mb-3">
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-blue-400" />
+                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                        Divisione per Attività nell&apos;App
+                      </h3>
+                    </div>
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      Ultimo Accesso
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-slate-400 mb-3">
+                    Distribuzione degli utenti in base alla frequenza di utilizzo recente.
+                  </p>
+
+                  <div className="space-y-3">
+                    {/* Livello 1: Online Adesso */}
+                    <div>
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="text-slate-200 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block" />
+                          <span className="font-medium text-emerald-300">Online Adesso (&lt; 15 min)</span>
+                        </span>
+                        <span className="text-slate-400 text-[11px] font-mono">
+                          <strong className="text-white">{stats.onlineNow}</strong> (
+                          {stats.total > 0 ? Math.round((stats.onlineNow / stats.total) * 100) : 0}%)
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-emerald-400 transition-all duration-500"
+                          style={{
+                            width: `${stats.total > 0 ? Math.max((stats.onlineNow / stats.total) * 100, stats.onlineNow > 0 ? 3 : 0) : 0}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Livello 2: Ultime 24h */}
+                    <div>
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="text-slate-200 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-cyan-400 inline-block" />
+                          <span className="font-medium text-cyan-300">Attivi nelle ultime 24 ore</span>
+                        </span>
+                        <span className="text-slate-400 text-[11px] font-mono">
+                          <strong className="text-white">{stats.activeToday}</strong> (
+                          {stats.total > 0 ? Math.round((stats.activeToday / stats.total) * 100) : 0}%)
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-cyan-400 transition-all duration-500"
+                          style={{
+                            width: `${stats.total > 0 ? Math.max((stats.activeToday / stats.total) * 100, stats.activeToday > 0 ? 3 : 0) : 0}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Livello 3: Ultimi 7 giorni */}
+                    <div>
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="text-slate-200 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-indigo-400 inline-block" />
+                          <span className="font-medium text-indigo-300">Attivi negli ultimi 7 giorni</span>
+                        </span>
+                        <span className="text-slate-400 text-[11px] font-mono">
+                          <strong className="text-white">{stats.activeThisWeek}</strong> (
+                          {stats.total > 0 ? Math.round((stats.activeThisWeek / stats.total) * 100) : 0}%)
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-indigo-400 transition-all duration-500"
+                          style={{
+                            width: `${stats.total > 0 ? Math.max((stats.activeThisWeek / stats.total) * 100, stats.activeThisWeek > 0 ? 3 : 0) : 0}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Livello 4: Ultimi 30 giorni */}
+                    <div>
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="text-slate-200 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-purple-400 inline-block" />
+                          <span className="font-medium text-purple-300">Attivi nel mese (7-30 gg)</span>
+                        </span>
+                        <span className="text-slate-400 text-[11px] font-mono">
+                          <strong className="text-white">{stats.activeThisMonth}</strong> (
+                          {stats.total > 0 ? Math.round((stats.activeThisMonth / stats.total) * 100) : 0}%)
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-purple-400 transition-all duration-500"
+                          style={{
+                            width: `${stats.total > 0 ? Math.max((stats.activeThisMonth / stats.total) * 100, stats.activeThisMonth > 0 ? 3 : 0) : 0}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Livello 5: Inattivi / Oltre 30gg o mai */}
+                    <div>
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="text-slate-400 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-slate-600 inline-block" />
+                          <span>Inattivi o nessun accesso (&gt; 30 gg)</span>
+                        </span>
+                        <span className="text-slate-400 text-[11px] font-mono">
+                          <strong>{stats.inactiveOrNever}</strong> (
+                          {stats.total > 0 ? Math.round((stats.inactiveOrNever / stats.total) * 100) : 0}%)
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-slate-600 transition-all duration-500"
+                          style={{
+                            width: `${stats.total > 0 ? Math.max((stats.inactiveOrNever / stats.total) * 100, stats.inactiveOrNever > 0 ? 3 : 0) : 0}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
+                  <span>
+                    WAU (7gg): <strong className="text-emerald-400">
+                      {stats.total > 0 ? Math.round(((stats.onlineNow + stats.activeToday + stats.activeThisWeek) / stats.total) * 100) : 0}%
+                    </strong>
+                  </span>
+                  <span>
+                    Con Telefono: <strong className="text-slate-200">{stats.conTelefono}</strong>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Toolbar */}

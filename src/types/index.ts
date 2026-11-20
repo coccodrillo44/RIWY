@@ -462,3 +462,14 @@ export interface SystemCounters {
   pendingReports: number;
   resolvedReports: number;
 }
+
+export interface CommunityDB {
+  idCommunity: string;
+  idOrganizzatore: string;
+  nomeOrganizzatore?: string;
+  nomeCommunity?: string;
+  logoOrganizzatore?: string;
+  dataCreazione?: number;
+  membri?: Record<string, boolean>;
+  membersCount: number;
+}
