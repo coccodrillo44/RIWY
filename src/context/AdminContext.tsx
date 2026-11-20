@@ -90,6 +90,7 @@ interface AdminContextType {
   reports: ReportItemDB[];
   auditLogs: AuditLogDB[];
   featureFlags: FeatureFlagDB[];
+  appConfig: Record<string, any>;
   analytics: AnalyticsDB;
   onlineUsersCount: number;
   rejectedEvents: EventoRespintoModerazione[];
@@ -121,6 +122,8 @@ interface AdminContextType {
   resolveReport: (reportId: string, categoria: string, note: string, idOrganizzatore?: string) => Promise<void>;
   reopenReport: (reportId: string, categoria: string, idOrganizzatore?: string) => Promise<void>;
   toggleFeatureFlag: (flagId: string) => Promise<void>;
+  updateAppConfigParam: (key: string, value: any) => Promise<boolean>;
+  deleteAppConfigParam: (key: string) => Promise<boolean>;
   sendBroadcastPush: (notification: { title: string; body: string; targetProvince?: string; targetCategory?: string }) => Promise<boolean>;
   saveOrganizerEvent: (draft: OrganizerEventDraft, ente: { id: string; nome: string }, cover: File | null, programma: File | null, existingId?: string) => Promise<boolean>;
   createOwnEnte: (data: CreateOwnEnteData) => Promise<boolean>;
@@ -269,6 +272,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   const [reports, setReports] = useState<ReportItemDB[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogDB[]>([]);
   const [featureFlags, setFeatureFlags] = useState<FeatureFlagDB[]>(defaultFeatureFlags);
+  const [appConfig, setAppConfigState] = useState<Record<string, any>>({});
   const [analytics, setAnalytics] = useState<AnalyticsDB>({
     guestsCount: 0,
     tabViews: {},
@@ -658,6 +662,18 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
             );
           },
           fail("feature_flags")
+        )
+      );
+
+      // App Config listener (/app_config)
+      unsubs.push(
+        onValue(
+          ref(rtdb, "app_config"),
+          (snap) => {
+            const val = snap.exists() ? (snap.val() as Record<string, any>) : {};
+            setAppConfigState(val);
+          },
+          fail("app_config")
         )
       );
 
@@ -1717,6 +1733,64 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     [featureFlags, addAuditLog, notify, rtdb]
   );
 
+  // App Config Parameters Management (/app_config)
+  const updateAppConfigParam = useCallback(
+    async (key: string, value: any): Promise<boolean> => {
+      const cleanKey = key.trim();
+      if (!cleanKey) {
+        notify("error", "La chiave del parametro non può essere vuota.");
+        return false;
+      }
+      try {
+        const primaVal = appConfig[cleanKey];
+        await set(ref(rtdb, `app_config/${cleanKey}`), value);
+        notify("success", `Parametro app_config '${cleanKey}' salvato con successo!`);
+
+        await addAuditLog({
+          azione: "MODIFICA_APP_CONFIG",
+          targetTipo: "sistema",
+          targetId: cleanKey,
+          dettagli: `Parametro app_config '${cleanKey}' impostato a: ${JSON.stringify(value)}`,
+          diffPrima: { valore: primaVal },
+          diffDopo: { valore: value },
+        });
+        return true;
+      } catch (e: any) {
+        console.error("Errore salvataggio parametro app_config:", e);
+        notify("error", `Errore salvataggio: ${errText(e)}`);
+        return false;
+      }
+    },
+    [appConfig, addAuditLog, notify, rtdb]
+  );
+
+  const deleteAppConfigParam = useCallback(
+    async (key: string): Promise<boolean> => {
+      const cleanKey = key.trim();
+      if (!cleanKey) return false;
+      try {
+        const primaVal = appConfig[cleanKey];
+        await remove(ref(rtdb, `app_config/${cleanKey}`));
+        notify("success", `Parametro app_config '${cleanKey}' eliminato.`);
+
+        await addAuditLog({
+          azione: "ELIMINAZIONE_PARAMETRO_APP_CONFIG",
+          targetTipo: "sistema",
+          targetId: cleanKey,
+          dettagli: `Eliminato parametro app_config '${cleanKey}' (valore precedente: ${JSON.stringify(primaVal)})`,
+          diffPrima: { valore: primaVal },
+          diffDopo: null,
+        });
+        return true;
+      } catch (e: any) {
+        console.error("Errore eliminazione parametro app_config:", e);
+        notify("error", `Errore eliminazione: ${errText(e)}`);
+        return false;
+      }
+    },
+    [appConfig, addAuditLog, notify, rtdb]
+  );
+
   // 10. Queue a Broadcast Push Notification (/notifiche_broadcast)
   const sendBroadcastPush = useCallback(
     async (notif: { title: string; body: string; targetProvince?: string; targetCategory?: string }) => {
@@ -2294,6 +2368,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         reports,
         auditLogs,
         featureFlags,
+        appConfig,
         analytics,
         onlineUsersCount,
         deletedUsersCount,
@@ -2320,6 +2395,8 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         resolveReport,
         reopenReport,
         toggleFeatureFlag,
+        updateAppConfigParam,
+        deleteAppConfigParam,
         sendBroadcastPush,
         saveOrganizerEvent,
         createOwnEnte,

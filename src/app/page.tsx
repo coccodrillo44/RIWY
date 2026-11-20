@@ -11,6 +11,7 @@ import { AuditTimeMachine } from "@/components/audit/AuditTimeMachine";
 import { ReportsCenter } from "@/components/reports/ReportsCenter";
 import { TuscanyMapViewer } from "@/components/map/TuscanyMapViewer";
 import { FeatureFlagsManager } from "@/components/features/FeatureFlagsManager";
+import { AppConfigManager } from "@/components/config/AppConfigManager";
 import { BroadcastNotificationHub } from "@/components/broadcast/BroadcastNotificationHub";
 import { AiModerationShield } from "@/components/ai/AiModerationShield";
 import { OrganizerStudio } from "@/components/studio/OrganizerStudio";
@@ -220,6 +221,7 @@ export default function AdminApp() {
           {activeTab === "reports" && <ReportsCenter />}
           {activeTab === "map" && <TuscanyMapViewer />}
           {activeTab === "feature_flags" && <FeatureFlagsManager />}
+          {activeTab === "app_config" && <AppConfigManager />}
           {activeTab === "broadcast" && <BroadcastNotificationHub />}
           {activeTab === "ai_moderation" && <AiModerationShield />}
           {activeTab === "studio" && <OrganizerStudio />}

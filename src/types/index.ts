@@ -473,3 +473,12 @@ export interface CommunityDB {
   membri?: Record<string, boolean>;
   membersCount: number;
 }
+
+export interface AppConfigDB {
+  min_version_code?: number;
+  min_version_code_ios?: number;
+  versione_minima?: number;
+  manutenzione?: boolean;
+  [key: string]: any;
+}
+

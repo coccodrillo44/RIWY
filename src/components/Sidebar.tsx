@@ -14,6 +14,7 @@ import {
   BellRing,
   ShieldCheck,
   Briefcase,
+  SlidersHorizontal,
   LogOut,
   ChevronRight,
 } from "lucide-react";
@@ -82,6 +83,7 @@ export function Sidebar() {
     { id: "audit", label: "Audit Log & Diff", icon: History },
     { id: "map", label: "Mappa Live Toscana", icon: MapPin },
     { id: "feature_flags", label: "Kill Switch & Flags", icon: ToggleLeft },
+    { id: "app_config", label: "Configurazione App", icon: SlidersHorizontal },
     { id: "broadcast", label: "Notifiche Broadcast", icon: BellRing },
     {
       id: "ai_moderation",
