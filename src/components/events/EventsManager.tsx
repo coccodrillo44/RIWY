@@ -18,8 +18,31 @@ import {
   Zap,
   Clock,
   Sparkles,
+  BarChart2,
+  ChevronDown,
+  ChevronUp,
+  Tag,
+  Heart,
+  Ticket,
+  Accessibility,
+  TrendingUp,
+  Layers,
 } from "lucide-react";
 import { getCategoryBadgeClass, formatEventDate, isBoostAttivo, isEventoPassato, extractProvince, normalizeCategory } from "@/lib/utils";
+
+const PROVINCIA_NOMI: Record<string, string> = {
+  FI: "Firenze (FI)",
+  PI: "Pisa (PI)",
+  LU: "Lucca (LU)",
+  SI: "Siena (SI)",
+  AR: "Arezzo (AR)",
+  LI: "Livorno (LI)",
+  MS: "Massa-Carrara (MS)",
+  GR: "Grosseto (GR)",
+  PO: "Prato (PO)",
+  PT: "Pistoia (PT)",
+  "N/D": "Non specificata",
+};
 
 export function EventsManager() {
   const {
@@ -41,6 +64,105 @@ export function EventsManager() {
   const [selectedProvince, setSelectedProvince] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [sortBy, setSortBy] = useState<"data" | "likes" | "titolo">("data");
+  const [showDetailedStats, setShowDetailedStats] = useState(true);
+
+  const eventStats = useMemo(() => {
+    const total = events.length;
+    const now = Date.now();
+    const ONE_DAY = 24 * 60 * 60 * 1000;
+    const SEVEN_DAYS = 7 * ONE_DAY;
+    const THIRTY_DAYS = 30 * ONE_DAY;
+
+    let attivi = 0;
+    let passati = 0;
+    let oscurati = 0;
+    let boosted = 0;
+    let conImmagine = 0;
+    let conOrari = 0;
+    let accessibiliDisabili = 0;
+    let opzioniVeg = 0;
+    let totaleLikes = 0;
+    let totaleRecensioni = 0;
+    let ratingSum = 0;
+    let ratedEventsCount = 0;
+
+    let prossimi7Giorni = 0;
+    let entro30Giorni = 0;
+    let oltre30Giorni = 0;
+
+    const categoryCounts: Record<string, number> = {};
+    const provinceCounts: Record<string, number> = {};
+
+    events.forEach((ev) => {
+      const isPast = isEventoPassato(ev);
+      const hasBoost = isBoostAttivo(ev);
+
+      if (ev.oscurato) oscurati++;
+      if (isPast) {
+        passati++;
+      } else {
+        attivi++;
+      }
+      if (hasBoost) boosted++;
+
+      if (ev.immagineCopertina && ev.immagineCopertina.trim().length > 0) conImmagine++;
+      if (ev.orariGiornalieri && Object.keys(ev.orariGiornalieri).length > 0) conOrari++;
+      if (ev.accessibileDisabili) accessibiliDisabili++;
+      if (ev.opzioniVeg) opzioniVeg++;
+
+      totaleLikes += Number(ev.likes || 0);
+      totaleRecensioni += Number(ev.numeroRecensioni || 0);
+      if (ev.mediaValutazioni && ev.mediaValutazioni > 0) {
+        ratingSum += Number(ev.mediaValutazioni);
+        ratedEventsCount++;
+      }
+
+      const cat = ev.categoria?.trim() || "Non categorizzato";
+      categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+
+      const provRaw = (ev.provincia?.trim() && ev.provincia.trim() !== "all" && ev.provincia.trim() !== "N/D")
+        ? ev.provincia.trim().toUpperCase()
+        : extractProvince(ev.luogo, ev.provincia);
+      const prov = provRaw || "N/D";
+      provinceCounts[prov] = (provinceCounts[prov] || 0) + 1;
+
+      const evDate = typeof ev.data === "number" ? ev.data : Number(ev.data) || 0;
+      if (!isPast && evDate >= now) {
+        const diff = evDate - now;
+        if (diff <= SEVEN_DAYS) {
+          prossimi7Giorni++;
+        } else if (diff <= THIRTY_DAYS) {
+          entro30Giorni++;
+        } else {
+          oltre30Giorni++;
+        }
+      }
+    });
+
+    const sortedCategories = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1]);
+    const sortedProvinces = Object.entries(provinceCounts).sort((a, b) => b[1] - a[1]);
+    const avgRating = ratedEventsCount > 0 ? (ratingSum / ratedEventsCount).toFixed(1) : "0.0";
+
+    return {
+      total,
+      attivi,
+      passati,
+      oscurati,
+      boosted,
+      conImmagine,
+      conOrari,
+      accessibiliDisabili,
+      opzioniVeg,
+      totaleLikes,
+      totaleRecensioni,
+      avgRating,
+      prossimi7Giorni,
+      entro30Giorni,
+      oltre30Giorni,
+      sortedCategories,
+      sortedProvinces,
+    };
+  }, [events]);
 
   // Modal State
   const [editingEvent, setEditingEvent] = useState<EventoDB | null>(null);
@@ -156,23 +278,365 @@ export function EventsManager() {
             Gestione & Moderazione Eventi
           </h1>
           <p className="text-sm text-slate-400">
-            Dati in tempo reale dall'infrastruttura Firebase di Rook in Toscana.
+            Dati in tempo reale dall&apos;infrastruttura Firebase di Rook in Toscana.
           </p>
         </div>
-        <div className="flex items-center space-x-2 flex-wrap">
-          <span className="text-xs text-slate-400">
-            Eventi filtrati: <strong className="text-amber-400">{filteredEvents.length}</strong> su {events.length}
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="px-2.5 py-1 rounded-lg bg-[#141d2e] border border-slate-800 text-slate-300">
+            Totale: <strong className="text-white">{eventStats.total}</strong>
           </span>
-          {selectedCategory !== "all" && (
-            <button
-              onClick={() => setSelectedCategory("all")}
-              className="text-[11px] text-amber-400 hover:text-amber-300 underline font-medium transition"
-              title="Mostra tutte le categorie"
-            >
-              (Filtro attivo: {selectedCategory} ✕)
-            </button>
+          <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300">
+            Attivi: <strong>{eventStats.attivi}</strong>
+          </span>
+          {eventStats.boosted > 0 && (
+            <span className="px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 flex items-center gap-1">
+              <Flame className="w-3 h-3 text-amber-400 fill-current" />
+              Boosted: <strong>{eventStats.boosted}</strong>
+            </span>
+          )}
+          <span className="px-2.5 py-1 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-400">
+            Passati: <strong className="text-slate-300">{eventStats.passati}</strong>
+          </span>
+          {eventStats.oscurati > 0 && (
+            <span className="px-2.5 py-1 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300">
+              Oscurati: <strong>{eventStats.oscurati}</strong>
+            </span>
           )}
         </div>
+      </div>
+
+      {/* Sezione Statistiche Eventi */}
+      <div className="rounded-2xl bg-[#0f172a] border border-[#1e293b] overflow-hidden shadow-xl">
+        <div className="px-5 py-3.5 bg-gradient-to-r from-[#141d2e] via-[#0f172a] to-[#141d2e] border-b border-[#1e293b] flex items-center justify-between">
+          <div className="flex items-center space-x-2.5">
+            <div className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400">
+              <BarChart2 className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
+                Statistiche Eventi Rook
+                <span className="text-[11px] font-normal text-slate-400">
+                  (Totale, categorie più popolari, province ed engagement)
+                </span>
+              </h2>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowDetailedStats(!showDetailedStats)}
+            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white px-2.5 py-1 rounded-lg bg-slate-800/40 hover:bg-slate-800 transition-colors border border-slate-700/50"
+          >
+            <span>{showDetailedStats ? "Comprimi" : "Espandi"}</span>
+            {showDetailedStats ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+
+        {showDetailedStats && (
+          <div className="p-5 space-y-5">
+            {/* 4 KPI Cards Rapide */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Card 1: Totale Eventi */}
+              <div className="p-4 rounded-xl bg-[#141d2e]/80 border border-slate-800/80 flex flex-col justify-between">
+                <div className="flex items-center justify-between text-slate-400 mb-2">
+                  <span className="text-xs font-medium">Numero Totale Eventi</span>
+                  <Calendar className="w-4 h-4 text-blue-400" />
+                </div>
+                <div className="text-2xl font-black text-white">{eventStats.total}</div>
+                <div className="mt-2 pt-2 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+                  <span>Attivi: <strong className="text-emerald-400">{eventStats.attivi}</strong></span>
+                  <span className="text-slate-600">•</span>
+                  <span>Passati: <strong className="text-slate-300">{eventStats.passati}</strong></span>
+                </div>
+              </div>
+
+              {/* Card 2: Categorie più Popolari */}
+              <div className="p-4 rounded-xl bg-[#141d2e]/80 border border-slate-800/80 flex flex-col justify-between">
+                <div className="flex items-center justify-between text-slate-400 mb-2">
+                  <span className="text-xs font-medium">Top Categoria</span>
+                  <Tag className="w-4 h-4 text-amber-400" />
+                </div>
+                <div className="text-xl font-black text-amber-300 truncate" title={eventStats.sortedCategories[0]?.[0] || "N/A"}>
+                  {eventStats.sortedCategories[0]?.[0] || "N/A"}
+                </div>
+                <div className="mt-2 pt-2 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+                  <span>Eventi: <strong className="text-amber-400">{eventStats.sortedCategories[0]?.[1] || 0}</strong></span>
+                  <span className="text-slate-600">•</span>
+                  <span>Categorie: <strong className="text-slate-200">{eventStats.sortedCategories.length}</strong></span>
+                </div>
+              </div>
+
+              {/* Card 3: Top Provincia */}
+              <div className="p-4 rounded-xl bg-[#141d2e]/80 border border-slate-800/80 flex flex-col justify-between">
+                <div className="flex items-center justify-between text-slate-400 mb-2">
+                  <span className="text-xs font-medium">Top Provincia</span>
+                  <MapPin className="w-4 h-4 text-emerald-400" />
+                </div>
+                <div className="text-xl font-black text-emerald-300 truncate">
+                  {PROVINCIA_NOMI[eventStats.sortedProvinces[0]?.[0]] || eventStats.sortedProvinces[0]?.[0] || "N/A"}
+                </div>
+                <div className="mt-2 pt-2 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+                  <span>Eventi: <strong className="text-emerald-400">{eventStats.sortedProvinces[0]?.[1] || 0}</strong></span>
+                  <span className="text-slate-600">•</span>
+                  <span>Copertura: <strong className="text-slate-200">{eventStats.sortedProvinces.filter(([p]) => p !== "N/D").length}/10 prov.</strong></span>
+                </div>
+              </div>
+
+              {/* Card 4: Altra Metrica (Boost & Inclusività / Engagement) */}
+              <div className="p-4 rounded-xl bg-[#141d2e]/80 border border-slate-800/80 flex flex-col justify-between">
+                <div className="flex items-center justify-between text-slate-400 mb-2">
+                  <span className="text-xs font-medium">In Evidenza & Engagement</span>
+                  <Flame className="w-4 h-4 text-rose-400" />
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-black text-rose-400">{eventStats.boosted}</span>
+                  <span className="text-xs text-rose-300/80 font-medium">in evidenza (Boost)</span>
+                </div>
+                <div className="mt-2 pt-2 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+                  <span>Likes: <strong className="text-rose-400">{eventStats.totaleLikes}</strong></span>
+                  <span className="text-slate-600">•</span>
+                  <span>Recensioni: <strong className="text-amber-400">{eventStats.totaleRecensioni}</strong></span>
+                </div>
+              </div>
+            </div>
+
+            {/* 3 Grandi Pannelli Dettagliati: Categorie con più Eventi, Province con più Eventi, Finestra Temporale & Tipologia */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+              {/* Pannello 1: Categorie con più Eventi */}
+              <div className="p-4 rounded-xl bg-[#141d2e]/60 border border-slate-800 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-800/80 mb-3">
+                    <div className="flex items-center gap-2">
+                      <Tag className="w-4 h-4 text-amber-400" />
+                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                        Categorie con più Eventi
+                      </h3>
+                    </div>
+                    <span className="text-[11px] text-slate-400">
+                      {eventStats.sortedCategories.length} categorie
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-slate-400 mb-3">
+                    Clicca su una categoria per filtrare immediatamente la lista sottostante.
+                  </p>
+
+                  <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
+                    {eventStats.sortedCategories.length === 0 ? (
+                      <p className="text-xs text-slate-500 py-4 text-center">Nessuna categoria registrata</p>
+                    ) : (
+                      eventStats.sortedCategories.map(([cat, count]) => {
+                        const pct = eventStats.total > 0 ? Math.round((count / eventStats.total) * 100) : 0;
+                        const isSelected = selectedCategory === cat;
+                        return (
+                          <div
+                            key={cat}
+                            onClick={() => setSelectedCategory(isSelected ? "all" : cat)}
+                            className={`p-2 rounded-lg cursor-pointer transition-all border ${
+                              isSelected
+                                ? "bg-amber-500/15 border-amber-500/40 shadow-sm"
+                                : "bg-[#0f172a]/70 hover:bg-[#1a253c] border-slate-800/60"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between text-xs mb-1">
+                              <span className="font-semibold text-slate-200 flex items-center gap-1.5 truncate max-w-[170px]">
+                                <span className={`w-2 h-2 rounded-full ${isSelected ? "bg-amber-400" : "bg-slate-500"}`} />
+                                {cat}
+                              </span>
+                              <span className="text-slate-400 font-mono text-[11px] shrink-0">
+                                <strong className="text-white">{count}</strong> ({pct}%)
+                              </span>
+                            </div>
+                            <div className="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className="h-full rounded-full bg-gradient-to-r from-amber-500 to-amber-300 transition-all duration-500"
+                                style={{ width: `${Math.max(pct, count > 0 ? 4 : 0)}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
+                  <span>Filtro attivo: <strong className="text-white">{selectedCategory === "all" ? "Tutte" : selectedCategory}</strong></span>
+                  {selectedCategory !== "all" && (
+                    <button
+                      onClick={() => setSelectedCategory("all")}
+                      className="text-amber-400 hover:underline text-[11px]"
+                    >
+                      Azzera filtro
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Pannello 2: Province con più Eventi */}
+              <div className="p-4 rounded-xl bg-[#141d2e]/60 border border-slate-800 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-800/80 mb-3">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-emerald-400" />
+                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                        Province con più Eventi
+                      </h3>
+                    </div>
+                    <span className="text-[11px] text-slate-400">
+                      Toscana & Dintorni
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-slate-400 mb-3">
+                    Clicca su una provincia per filtrare gli eventi nella tabella.
+                  </p>
+
+                  <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
+                    {eventStats.sortedProvinces.length === 0 ? (
+                      <p className="text-xs text-slate-500 py-4 text-center">Nessuna provincia registrata</p>
+                    ) : (
+                      eventStats.sortedProvinces.map(([prov, count]) => {
+                        const pct = eventStats.total > 0 ? Math.round((count / eventStats.total) * 100) : 0;
+                        const nomeCompleto = PROVINCIA_NOMI[prov] || prov;
+                        const isSelected = selectedProvince.toUpperCase() === prov.toUpperCase();
+                        return (
+                          <div
+                            key={prov}
+                            onClick={() => {
+                              if (prov === "N/D") {
+                                setSelectedProvince("all");
+                              } else {
+                                setSelectedProvince(isSelected ? "all" : prov);
+                              }
+                            }}
+                            className={`p-2 rounded-lg cursor-pointer transition-all border ${
+                              isSelected
+                                ? "bg-emerald-500/15 border-emerald-500/40 shadow-sm"
+                                : "bg-[#0f172a]/70 hover:bg-[#1a253c] border-slate-800/60"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between text-xs mb-1">
+                              <span className="font-semibold text-slate-200 flex items-center gap-1.5 truncate max-w-[170px]">
+                                <span className={`w-2 h-2 rounded-full ${isSelected ? "bg-emerald-400" : "bg-slate-500"}`} />
+                                {nomeCompleto}
+                              </span>
+                              <span className="text-slate-400 font-mono text-[11px] shrink-0">
+                                <strong className="text-white">{count}</strong> ({pct}%)
+                              </span>
+                            </div>
+                            <div className="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-300 transition-all duration-500"
+                                style={{ width: `${Math.max(pct, count > 0 ? 4 : 0)}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
+                  <span>Filtro provincia: <strong className="text-white">{selectedProvince === "all" ? "Tutte" : selectedProvince}</strong></span>
+                  {selectedProvince !== "all" && (
+                    <button
+                      onClick={() => setSelectedProvince("all")}
+                      className="text-emerald-400 hover:underline text-[11px]"
+                    >
+                      Azzera filtro
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Pannello 3: Finestra Temporale & Tipologia */}
+              <div className="p-4 rounded-xl bg-[#141d2e]/60 border border-slate-800 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-800/80 mb-3">
+                    <div className="flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-purple-400" />
+                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                        Finestra Temporale & Tipologia
+                      </h3>
+                    </div>
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      Inclusività & Date
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-slate-400 mb-3">
+                    Distribuzione temporale degli eventi in arrivo e caratteristiche.
+                  </p>
+
+                  <div className="space-y-3">
+                    {/* Temporale */}
+                    <div className="p-2.5 rounded-lg bg-[#0f172a]/70 border border-slate-800/60 space-y-1.5">
+                      <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                        <span>Orizzonte Temporale</span>
+                        <span className="text-slate-500">Eventi futuri</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-center pt-1">
+                        <div className="p-1.5 rounded-md bg-[#141d2e] border border-slate-800">
+                          <div className="text-xs font-bold text-emerald-400">{eventStats.prossimi7Giorni}</div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">Entro 7 gg</div>
+                        </div>
+                        <div className="p-1.5 rounded-md bg-[#141d2e] border border-slate-800">
+                          <div className="text-xs font-bold text-blue-400">{eventStats.entro30Giorni}</div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">8 - 30 gg</div>
+                        </div>
+                        <div className="p-1.5 rounded-md bg-[#141d2e] border border-slate-800">
+                          <div className="text-xs font-bold text-purple-400">{eventStats.oltre30Giorni}</div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">&gt; 30 gg</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Qualità & Scheda */}
+                    <div className="p-2.5 rounded-lg bg-[#0f172a]/70 border border-slate-800/60 space-y-1.5">
+                      <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                        <span>Qualità & Informazioni</span>
+                        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      </div>
+                      <div className="flex items-center justify-between text-xs pt-0.5">
+                        <span className="text-slate-300">Con Immagine Copertina</span>
+                        <span className="font-mono text-purple-300 font-bold">
+                          {eventStats.conImmagine} ({eventStats.total > 0 ? Math.round((eventStats.conImmagine / eventStats.total) * 100) : 0}%)
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-slate-300">Con Orari Specificati</span>
+                        <span className="font-mono text-blue-300 font-bold">
+                          {eventStats.conOrari} ({eventStats.total > 0 ? Math.round((eventStats.conOrari / eventStats.total) * 100) : 0}%)
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Inclusività & Accessibilità */}
+                    <div className="p-2.5 rounded-lg bg-[#0f172a]/70 border border-slate-800/60 space-y-1.5">
+                      <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                        <span>Inclusività & Accessibilità</span>
+                        <Accessibility className="w-3.5 h-3.5 text-cyan-400" />
+                      </div>
+                      <div className="flex items-center justify-between text-xs pt-0.5">
+                        <span className="text-slate-300">Accessibili ai Disabili</span>
+                        <span className="font-mono text-cyan-300 font-bold">{eventStats.accessibiliDisabili}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-slate-300">Opzioni Vegano / Vegetariano</span>
+                        <span className="font-mono text-emerald-300 font-bold">{eventStats.opzioniVeg}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
+                  <span>Rating Medio: <strong className="text-amber-400">★ {eventStats.avgRating}</strong></span>
+                  <span>Totale Likes: <strong className="text-rose-400">{eventStats.totaleLikes}</strong></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Filter Toolbar */}
